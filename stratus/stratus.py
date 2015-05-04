@@ -17,67 +17,108 @@ import time
 import SimpleHTTPSServer
 
 VERSION = "0.0.1"
+PORT = 5678
 
 
 class server(SimpleHTTPSServer.handler):
     """docstring for handler"""
-    def __init__( self ):
+    def __init__(self):
         super(server, self).__init__()
+        self.node_timeout(1, 5)
         self.conns = {}
         self.data = {}
         self.actions = [
-            ( 'post', '/ping/:name', self.post_ping ),
-            ( 'get', '/ping/:name', self.get_ping )
+            ('post', '/ping/:name', self.post_ping),
+            ('get', '/ping/:name', self.get_ping),
+            ('get', '/connected', self.get_connected)
             ]
     
     def log(self, message):
         print message
 
-    def get_ping( self, request ):
+    def date_handler(self, obj):
+        return obj.isoformat() if hasattr(obj, 'isoformat') else obj
+
+    def get_ping(self, request):
+        self.node_status(request["variables"]["name"], update=True)
         output = json.dumps(request['variables'])
         headers = self.create_header()
         headers["Content-Type"] = "application/json"
-        return self.end_response( headers, output )
+        return self.end_response(headers, output)
 
-    def post_ping( self, request ):
+    def post_ping(self, request):
+        self.node_status(request["variables"]["name"], update=True)
         output = self.form_data(request['data'])
-        output = json.dumps( output )
+        output = json.dumps(output)
         headers = self.create_header()
         headers["Content-Type"] = "application/json"
-        return self.end_response( headers, output )
+        return self.end_response(headers, output)
 
-    def post_response( self, request ):
+    def get_connected(self, request):
+        output = json.dumps(self.conns, default=self.date_handler)
         headers = self.create_header()
-        headers = self.add_header( headers, ( "Content-Type", "application/octet-stream") )
-        return self.end_response( headers, request['post']['file_name'] )
-        
-    def get_post( self, request ):
-        output = json.dumps(request['variables'])
+        headers["Content-Type"] = "application/json"
+        return self.end_response(headers, output)
+
+    def post_response(self, request):
         headers = self.create_header()
-        headers = self.add_header( headers, ( "Content-Type", "application/json") )
-        return self.end_response( headers, output )
+        headers["Content-Type"] = "application/octet-stream"
+        return self.end_response(headers, request['post']['file_name'])
 
-    def get_file( self, request ):
-        return self.serve_page( request["page"] )
-
-    def start_server(self, address="0.0.0.0", port=5678, key=False, crt=False):
-        server_process = SimpleHTTPSServer.server( ( address, port ), self, \
+    def start_server(self, address="0.0.0.0", port=PORT, key=False, crt=False):
+        thread.start_new_thread(self.update_status, ())
+        server_process = SimpleHTTPSServer.server((address, port), self, \
             bind_and_activate=False, threading=True, \
-            key=key, crt=crt )
-        return thread.start_new_thread( server_process.serve_forever, () )
+            key=key, crt=crt)
+        return thread.start_new_thread(server_process.serve_forever, ())
+
+    def update_status(self):
+        while True:
+            for node in self.conns:
+                self.node_status(node)
+            time.sleep(self.timeout_seconds)
+
+    def node_status(self, node_name, update=False):
+        curr_time = datetime.datetime.now()
+        if not node_name in self.conns:
+            self.conns[node_name] = self.node(node_name, curr_time)
+        elif update:
+            self.conns[node_name]["last_update"] = curr_time
+        else:
+            if curr_time - self.timeout > \
+                self.conns[node_name]["last_update"]:
+                self.conns[node_name]["online"] = False
+
+    def node(self, name, curr_time=False):
+        # Don't have to call datetime.datetime.now() is provided
+        if not curr_time:
+            curr_time = datetime.datetime.now()
+        return {
+            "name": name,
+            "last_update": curr_time,
+            "online": True
+        }
+
+    def node_timeout(self, loop=False, delta=False):
+        if loop:
+            self.timeout_seconds = loop
+            self.timeout = datetime.timedelta(seconds=loop)
+        if delta:
+            self.timeout = datetime.timedelta(seconds=delta)
+        return self.timeout
 
 
 class client(object):
     """docstring for client"""
-    def __init__(self, addr="localhost", port=5678, protocol="http", \
-        name=socket.gethostname(), update=1):
+    def __init__(self, addr="localhost", port=PORT, protocol="http", \
+        name=socket.gethostname(), update=1, recv=False):
         super(client, self).__init__()
         self.addr = addr
         self.port = port
         self.protocol = protocol
         self.name = name
         self.update = update
-        self.recv_data = []
+        self.recv = recv
 
     def host(self):
         """
@@ -93,7 +134,7 @@ class client(object):
         is true.
         """
         try:
-            return json.loads(res)["OK"]
+            return json.loads(res)
         except (ValueError, KeyError):
             return False
 
@@ -141,7 +182,15 @@ class client(object):
         """
         Starts main
         """
-        return thread.start_new_thread( self.main, () )
+        return thread.start_new_thread(self.main, ())
+
+    def connected(self):
+        """
+        Gets others connected
+        """
+        url = "connected"
+        res = self.get(url)
+        return self.return_status(res)
 
     def main(self):
         """
@@ -157,14 +206,14 @@ class client(object):
         Queues data for sending
         """
         url = "ping/" + self.name
-        return self.post( url, {"to": to, "data": data} )
+        return self.post(url, {"to": to, "data": data})
 
 def main():
     address = "0.0.0.0"
 
     port = 80
-    if len( sys.argv ) > 1:
-        port = int ( sys.argv[1] )
+    if len(sys.argv) > 1:
+        port = int (sys.argv[1])
 
     stratus_server = server()
     stratus_server.start_server()
