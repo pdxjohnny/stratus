@@ -17,7 +17,7 @@ import time
 import SimpleHTTPSServer
 import copy
 
-VERSION = "0.0.2"
+VERSION = "0.0.3"
 PORT = 5678
 
 
@@ -235,6 +235,17 @@ class client(object):
         res = self.get(url)
         return json.loads(res)
 
+    def online(self):
+        """
+        Gets others online
+        """
+        connected = self.connected()
+        online = {}
+        for item in connected:
+            if connected[item]["online"]:
+                online[item] = connected[item]
+        return online
+
     def main(self):
         """
         Continues to ping
@@ -260,22 +271,17 @@ def print_recv(data):
 def main():
     address = "0.0.0.0"
 
-    port = 80
+    port = PORT
     if len(sys.argv) > 1:
-        port = int (sys.argv[1])
+        port = int(sys.argv[1])
 
-    stratus_server = server()
-    stratus_server.start_server()
+    # stratus_server = server()
+    # stratus_server.start_server(port=port)
 
-    stratus_client_two = client(name="two")
-    stratus_client_two.connect()
-    stratus_client_two.recv = print_recv
+    stratus_client_two = client()
+    print stratus_client_two.online()
 
-    stratus_client_one = client(name="one")
-    stratus_client_one.connect()
-    print stratus_client_one.send("hello there", "two")
-
-    raw_input("Return Key to exit\n")
+    # raw_input("Return Key to exit\n")
 
 
 if __name__ == '__main__':

@@ -8,7 +8,6 @@ def update_version_files(version):
 	files = {
 		"setup.py": ("  version = ", "  version = \'%s\',\n"),
 		"stratus/stratus.py": ("VERSION = ", "VERSION = \"%s\"\n"),
-		"stratus/index.html": ("\t\t\t<h5>Version ", "\t\t\t<h5>Version %s</h5>\n")
 		}
 	for name in files:
 		read_file = open(name,"rb")
