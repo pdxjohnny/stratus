@@ -17,7 +17,7 @@ import SimpleHTTPSServer
 import copy
 import httplib
 
-VERSION = "0.0.4"
+VERSION = "0.0.5"
 PORT = 5678
 
 
