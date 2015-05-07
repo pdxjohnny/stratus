@@ -17,7 +17,9 @@ import SimpleHTTPSServer
 import copy
 import httplib
 
-VERSION = "0.0.6"
+import sockhttp
+
+VERSION = "0.0.7"
 PORT = 5678
 ALL_CLIENTS = "__all__"
 
@@ -138,7 +140,10 @@ class server(SimpleHTTPSServer.handler):
 
     def send_to(self, node_name, data):
         if node_name in self.conns:
-            return self.conns[node_name].sendall(data)
+            try:
+                return self.conns[node_name].sendall(data)
+            except:
+                del self.conns[node_name]
         return False
 
     def send_messages(self, to):
@@ -209,7 +214,7 @@ class client(object):
         self.headers = {"Connection": "keep-alive"}
         self.ping_conn = httplib.HTTPConnection(host)
         self.send_conn = httplib.HTTPConnection(host)
-        self.recv_conn = httplib.HTTPConnection(host)
+        self.recv_conn = sockhttp.conn(self.host, self.port)
         return True
 
     def return_status(self, res):
@@ -286,18 +291,13 @@ class client(object):
         Connects a socket that the server can push to.
         """
         url = "/connect/" + self.name
-        self.recv_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.recv_conn.connect((self.host, self.port))
-        self.recv_conn.sendall('GET %s HTTP/1.1\r\nConnection: keep-alive' % (url, ))
-        data = self.recv_conn.recv(1024)
-        res = "\n\n".join(data.split("\n\n")[1:])
+        res = self.recv_conn.get(url)
         self.return_status(res)
-        self.listen()
+        thread.start_new_thread( self.listen, () )
 
     def listen(self):
         while True:
-            data = self.recv_conn.recv(1024)
-            res = "\n\n".join(data.split("\n\n")[1:])
+            res = self.recv_conn.recv()
             if len(res):
                 self.return_status(res)
 
@@ -341,7 +341,7 @@ class client(object):
 
 
 def print_recv(data):
-    print '\n' + data["__name__"], data
+    print data
 
 def main():
     address = "0.0.0.0"
@@ -363,7 +363,7 @@ def main():
     while True:
         data = raw_input("Send data: ")
         if len(data) > 0:
-            stratus_client_one.send(data, "two")
+            stratus_client_one.send(data)
         pass
 
 
