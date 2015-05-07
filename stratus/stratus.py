@@ -19,7 +19,7 @@ import httplib
 
 import sockhttp
 
-VERSION = "0.0.7"
+VERSION = "0.0.8"
 PORT = 5678
 ALL_CLIENTS = "__all__"
 
