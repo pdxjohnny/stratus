@@ -1,25 +1,26 @@
 #! /usr/bin/python
-import socket
-import json
-import urllib
-import ssl
-import Cookie
-import argparse
-import thread
 import os
+import re
 import sys
+import ssl
+import json
+import time
+import copy
+import socket
 import urllib
+import Cookie
+import thread
+import urllib
+import httplib
+import argparse
+import datetime
 import traceback
 import mimetypes
-import datetime
-import time
 import SimpleHTTPSServer
-import copy
-import httplib
 
 import sockhttp
 
-VERSION = "0.0.8"
+VERSION = "0.0.9"
 PORT = 5678
 ALL_CLIENTS = "__all__"
 
@@ -84,7 +85,7 @@ class server(SimpleHTTPSServer.handler):
         headers["Content-Type"] = "application/json"
         return self.end_response(headers, output)
 
-    def start_server(self, address="0.0.0.0", port=PORT, key=False, crt=False):
+    def start(self, address="0.0.0.0", port=PORT, key=False, crt=False):
         thread.start_new_thread(self.update_status, ())
         server_process = SimpleHTTPSServer.server((address, port), self, \
             bind_and_activate=False, threading=True, \
@@ -225,8 +226,17 @@ class client(object):
             res = json.loads(res)
             if len(res) > 0 and self.recv:
                 for item in xrange(0, len(res)):
-                    res[item]["__name__"] = self.name
-                    self.recv(res[item])
+                    data = res[item]
+                    data["__name__"] = self.name
+                    if ( data["data"][0] == '{' and \
+                        data["data"][-1] == '}' ) \
+                        or ( data["data"][0] == '[' and \
+                            data["data"][-1] == ']' ):
+                        try:
+                            data["data"] = json.loads(data["data"])
+                        except Exception, e:
+                            pass
+                    self.recv(data)
             return True
         except (ValueError, KeyError):
             return False
@@ -262,6 +272,8 @@ class client(object):
         # try:
         headers = self.headers.copy()
         headers["Content-Type"] = "application/x-www-form-urlencoded"
+        for item in data:
+            data[item] = data[item]
         data = urllib.urlencode(data, True).replace("+", "%20")
         self.send_conn.request("POST", "/" + url, data, headers)
         res = self.send_conn.getresponse()
@@ -351,7 +363,7 @@ def main():
         port = int(sys.argv[1])
 
     stratus_server = server()
-    stratus_server.start_server(port=port)
+    stratus_server.start(port=port)
 
     stratus_client_one = client(name="one")
     stratus_client_two = client(name="two")
@@ -363,6 +375,9 @@ def main():
     while True:
         data = raw_input("Send data: ")
         if len(data) > 0:
+            data = {
+                "payload": data
+            }
             stratus_client_one.send(data)
         pass
 
