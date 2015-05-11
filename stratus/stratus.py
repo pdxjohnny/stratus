@@ -20,7 +20,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.10"
+__version__ = "0.0.11"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -100,9 +100,13 @@ class server(SimpleHTTPSServer.handler):
 
     def update_status(self):
         while True:
-            for node in self.clients:
-                self.node_status(node)
-            time.sleep(self.timeout_seconds)
+            try:
+                for node in self.clients:
+                    self.node_status(node)
+                time.sleep(self.timeout_seconds)
+            except RuntimeError, error:
+                # Dictionary size change is ok
+                pass
 
     def node_status(self, node_name, update=False, conn=False):
         curr_time = datetime.datetime.now()
