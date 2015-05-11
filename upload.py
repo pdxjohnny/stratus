@@ -7,7 +7,7 @@ import shutil
 def update_version_files(version):
 	files = {
 		"setup.py": ("  version = ", "  version = \'%s\',\n"),
-		"stratus/stratus.py": ("VERSION = ", "VERSION = \"%s\"\n"),
+		"stratus/stratus.py": ("__version__ = ", "__version__ = \"%s\"\n"),
 		}
 	for name in files:
 		read_file = open(name,"rb")
@@ -40,7 +40,7 @@ def git_push():
 def upload():
 	command = "python setup.py sdist upload -r pypi"
 	os.system(command)
-	command = "sudo -E pip install --upgrade stratus"
+	command = "sudo -HE pip install --upgrade stratus"
 	os.system(command)
 
 def main():

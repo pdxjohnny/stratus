@@ -20,7 +20,14 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-VERSION = "0.0.9"
+__version__ = "0.0.9"
+__description__ = "Connection facilitator"
+__logo__ = """
+ ___  ____  ____    __   ____  __  __  ___
+/ __)(_  _)(  _ \  /__\ (_  _)(  )(  )/ __)
+\__ \  )(   )   / /(__)\  )(   )(__)( \__ \\
+(___/ (__) (_)\_)(__)(__)(__) (______)(___/
+"""
 PORT = 5678
 ALL_CLIENTS = "__all__"
 
