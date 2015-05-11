@@ -12,9 +12,11 @@ import stratus
 import argparse
 
 ARG_PARSER = False
+PROMPT = ": \r"
 
 def print_recv(data):
-    print (data)
+    sys.stdout.write(data["from"] + ": " + data["data"] + "\r\n")
+    sys.stdout.write(PROMPT)
 
 def server(args):
     server_process = stratus.server()
@@ -28,10 +30,10 @@ def client(args):
     client_conn.recv = print_recv
     client_conn.connect()
     while True:
-        sys.stdout.write("Send data: \r")
+        sys.stdout.write(PROMPT)
         data = sys.stdin.readline()
-        if len(data) > 0:
-            client_conn.send(data)
+        if len(data) > 1:
+            client_conn.send(data[:-1])
 
 def arg_setup():
     global ARG_PARSER

@@ -20,7 +20,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.9"
+__version__ = "0.0.10"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -40,7 +40,6 @@ class server(SimpleHTTPSServer.handler):
         self.conns = {}
         self.clients = {}
         self.data = {}
-        self.online = 0
         self.actions = [
             ('post', '/ping/:name', self.post_ping),
             ('get', '/ping/:name', self.get_ping),
@@ -107,19 +106,21 @@ class server(SimpleHTTPSServer.handler):
 
     def node_status(self, node_name, update=False, conn=False):
         curr_time = datetime.datetime.now()
+        # Create node
         if not node_name in self.clients:
             self.clients[node_name] = self.node(node_name, curr_time)
-            self.online += 1
+        # Update time
         elif update:
             self.clients[node_name]["last_update"] = curr_time
             self.clients[node_name]["online"] = True
-            if not self.clients[node_name]["online"]:
-                self.online += 1
+        # Offline
         else:
             if curr_time - self.timeout > \
                 self.clients[node_name]["last_update"]:
-                self.clients[node_name]["online"] = False
-                self.online -= 1
+                del self.clients[node_name]
+                if node_name in self.conns:
+                    del self.conns[node_name]
+        # Connect recv socket
         if conn:
             self.conns[node_name] = conn
 
@@ -187,7 +188,7 @@ class server(SimpleHTTPSServer.handler):
                         new_messages.append(append)
                 for item in xrange(0, len(self.data[name])):
                     if len(self.data[name]) and \
-                        len(self.data[name][item]["seen"]) >= self.online:
+                        len(self.data[name][item]["seen"]) >= len(self.clients):
                         del self.data[name][item]
         return new_messages
 
@@ -223,6 +224,7 @@ class client(object):
         self.ping_conn = httplib.HTTPConnection(host)
         self.send_conn = httplib.HTTPConnection(host)
         self.recv_conn = sockhttp.conn(self.host, self.port)
+        self.recv_connect()
         return True
 
     def return_status(self, res):
@@ -263,12 +265,13 @@ class client(object):
         Requests the page and returns data
         """
         res = ""
-        # try:
-        http_conn.request("GET", "/" + url, headers=self.headers)
-        res = http_conn.getresponse()
-        res = res.read()
-        # except (httplib.URLError, httplib.HTTPError), error:
-        #     print( error)
+        try:
+            http_conn.request("GET", "/" + url, headers=self.headers)
+            res = http_conn.getresponse()
+            res = res.read()
+        except (httplib.BadStatusLine), error:
+            print("Reconecting")
+            self.http_conncet()
         return res
 
     def post(self, url, data):
@@ -276,17 +279,18 @@ class client(object):
         Requests the page and returns data
         """
         res = ""
-        # try:
-        headers = self.headers.copy()
-        headers["Content-Type"] = "application/x-www-form-urlencoded"
-        for item in data:
-            data[item] = data[item]
-        data = urllib.urlencode(data, True).replace("+", "%20")
-        self.send_conn.request("POST", "/" + url, data, headers)
-        res = self.send_conn.getresponse()
-        res = res.read()
-        # except (httplib.URLError, httplib.HTTPError), error:
-        #     print( error)
+        try:
+            headers = self.headers.copy()
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+            for item in data:
+                data[item] = data[item]
+            data = urllib.urlencode(data, True).replace("+", "%20")
+            self.send_conn.request("POST", "/" + url, data, headers)
+            res = self.send_conn.getresponse()
+            res = res.read()
+        except (httplib.BadStatusLine), error:
+            print("Reconecting")
+            self.http_conncet()
         return res
 
     def connect(self):
@@ -299,7 +303,6 @@ class client(object):
         """
         Continues to ping
         """
-        self.recv_connect()
         while True:
             self.ping()
             time.sleep(self.update)
