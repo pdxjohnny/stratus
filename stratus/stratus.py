@@ -92,9 +92,9 @@ class server(SimpleHTTPSServer.handler):
         headers["Content-Type"] = "application/json"
         return self.end_response(headers, output)
 
-    def start(self, address="0.0.0.0", port=PORT, key=False, crt=False):
+    def start(self, host="0.0.0.0", port=PORT, key=False, crt=False):
         thread.start_new_thread(self.update_status, ())
-        server_process = SimpleHTTPSServer.server((address, port), self, \
+        server_process = SimpleHTTPSServer.server((host, port), self, \
             bind_and_activate=False, threading=True, \
             key=key, crt=crt)
         return thread.start_new_thread(server_process.serve_forever, ())
@@ -268,7 +268,7 @@ class client(object):
         res = http_conn.getresponse()
         res = res.read()
         # except (httplib.URLError, httplib.HTTPError), error:
-        #     print error
+        #     print( error)
         return res
 
     def post(self, url, data):
@@ -286,7 +286,7 @@ class client(object):
         res = self.send_conn.getresponse()
         res = res.read()
         # except (httplib.URLError, httplib.HTTPError), error:
-        #     print error
+        #     print( error)
         return res
 
     def connect(self):
@@ -312,7 +312,7 @@ class client(object):
         url = "/connect/" + self.name
         res = self.recv_conn.get(url)
         self.return_status(res)
-        thread.start_new_thread( self.listen, () )
+        thread.start_new_thread(self.listen, () )
 
     def listen(self):
         while True:
@@ -360,7 +360,7 @@ class client(object):
 
 
 def print_recv(data):
-    print data
+    print(data)
 
 def main():
     address = "0.0.0.0"
