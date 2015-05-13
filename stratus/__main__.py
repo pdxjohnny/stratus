@@ -8,6 +8,7 @@ Facilitates connections
 """
 
 import sys
+import time
 import stratus
 import argparse
 
@@ -23,7 +24,7 @@ def server(args):
     server_process.start(**args)
     sys.stdout.write("Server listening\r\n")
     while True:
-        pass
+        time.sleep(300)
 
 def client(args):
     client_conn = stratus.client(**args)
