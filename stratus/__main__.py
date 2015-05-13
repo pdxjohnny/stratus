@@ -13,7 +13,7 @@ import stratus
 import argparse
 
 ARG_PARSER = False
-PROMPT = ": \r"
+PROMPT = ":\r"
 
 def print_recv(data):
     sys.stdout.write(data["from"] + ": " + data["data"] + "\r\n")
