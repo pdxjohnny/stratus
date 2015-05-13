@@ -40,7 +40,7 @@ def git_push():
 def upload():
 	command = "python setup.py sdist upload -r pypi"
 	os.system(command)
-	if os.name == "nt":
+	if os.name != "nt":
 		command = "sudo -HE pip install --upgrade stratus"
 	else:
 		command = "python -m pip install --upgrade stratus"
