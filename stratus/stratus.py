@@ -40,13 +40,14 @@ class server(SimpleHTTPSServer.handler):
         self.conns = {}
         self.clients = {}
         self.data = {}
+        self.auth = False
         self.actions = [
-            ('post', '/ping/:name', self.post_ping),
-            ('get', '/ping/:name', self.get_ping),
-            ('get', '/connect/:name', self.get_connect),
-            ('get', '/messages/:name', self.get_messages),
-            ('get', '/connected', self.get_connected),
-            ('get', '/:page', self.get_connected)
+            ('post', '/ping/:name', self.post_ping, self.authenticate),
+            ('get', '/ping/:name', self.get_ping, self.authenticate),
+            ('get', '/connect/:name', self.get_connect, self.authenticate),
+            ('get', '/messages/:name', self.get_messages, self.authenticate),
+            ('get', '/connected', self.get_connected, self.authenticate),
+            ('get', '/:page', self.get_connected, self.authenticate)
             ]
 
     def log(self, message):
@@ -54,6 +55,17 @@ class server(SimpleHTTPSServer.handler):
 
     def date_handler(self, obj):
         return obj.isoformat() if hasattr(obj, 'isoformat') else obj
+
+    def authenticate( self, request ):
+        if not self.auth:
+            return True
+        authorized, response = self.basic_auth(request)
+        if not authorized:
+            return response
+        username, password = response
+        if self.auth(username, password):
+            return True
+        return SimpleHTTPSServer.SEND_BASIC_AUTH
 
     def post_ping(self, request):
         self.node_status(request["variables"]["name"], update=True)

@@ -14,13 +14,28 @@ import argparse
 
 ARG_PARSER = False
 PROMPT = ":\r"
+AUTH_USER = False
+AUTH_PASS = False
 
 def print_recv(data):
     sys.stdout.write(data["from"] + ": " + str(data["data"]) + "\r\n")
     sys.stdout.write(PROMPT)
 
+def auth(username, password):
+    if username == AUTH_USER and password == AUTH_PASS:
+        return True
+    return False
+
 def start(args):
     server_process = stratus.server()
+    if "username" in args and "password" in args:
+        global AUTH_USER
+        global AUTH_PASS
+        AUTH_USER = args["username"]
+        AUTH_PASS = args["password"]
+        del args["username"]
+        del args["password"]
+        server_process.auth = auth
     server_process.start(**args)
     sys.stdout.write("Server listening\r\n")
     while True:
@@ -46,19 +61,27 @@ def arg_setup():
     ARG_PARSER.add_argument("action", type=unicode, \
         help="Start server or connect to server (start, connect)")
     ARG_PARSER.add_argument("--host", "-a", type=unicode, \
-        help="Address to connect to or host server on")
-    ARG_PARSER.add_argument("--port", "-p", type=int, \
+        help="Address of host server")
+    ARG_PARSER.add_argument("--port", type=int, \
         help="Port to host or connect to stratus server")
+    ARG_PARSER.add_argument("--key", type=unicode, \
+        help="Key file to use")
+    ARG_PARSER.add_argument("--crt", type=unicode, \
+        help="Cert file to use")
     ARG_PARSER.add_argument("--name", "-n", type=unicode, \
         help="Name to identify client by other than hostname")
+    ARG_PARSER.add_argument("--username", "-u", type=unicode, \
+        help="Username to connect to stratus server")
+    ARG_PARSER.add_argument("--password", "-p", type=unicode, \
+        help="Password to connect to stratus server")
     ARG_PARSER.add_argument("--version", "-v", action="version", \
         version=u"stratus " + unicode(stratus.__version__) )
     initial = vars(ARG_PARSER.parse_args())
-    used = {}
+    args = {}
     for arg in initial:
         if initial[arg]:
-            used[arg] = initial[arg]
-    return used
+            args[arg] = initial[arg]
+    return args
 
 def main():
     print (stratus.__logo__)
