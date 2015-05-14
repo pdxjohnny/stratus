@@ -3,6 +3,7 @@ import os
 import sys
 import shutil
 
+NAME = "stratus"
 
 def update_version_files(version):
 	files = {
@@ -41,9 +42,9 @@ def upload():
 	command = "python setup.py sdist upload -r pypi"
 	os.system(command)
 	if os.name != "nt":
-		command = "sudo -HE pip install --upgrade stratus"
+		command = "sudo -HE pip install --upgrade %s" % (NAME, )
 	else:
-		command = "python -m pip install --upgrade stratus"
+		command = "python -m pip install --upgrade %s" % (NAME, )
 	os.system(command)
 
 def main():

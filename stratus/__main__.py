@@ -16,17 +16,17 @@ ARG_PARSER = False
 PROMPT = ":\r"
 
 def print_recv(data):
-    sys.stdout.write(data["from"] + ": " + data["data"] + "\r\n")
+    sys.stdout.write(data["from"] + ": " + str(data["data"]) + "\r\n")
     sys.stdout.write(PROMPT)
 
-def server(args):
+def start(args):
     server_process = stratus.server()
     server_process.start(**args)
     sys.stdout.write("Server listening\r\n")
     while True:
         time.sleep(300)
 
-def client(args):
+def connect(args):
     client_conn = stratus.client(**args)
     client_conn.recv = print_recv
     client_conn.connect()
@@ -34,7 +34,11 @@ def client(args):
         sys.stdout.write(PROMPT)
         data = sys.stdin.readline()
         if len(data) > 1:
-            client_conn.send(data[:-1])
+            data = data[:-1]
+            if data == "exit":
+                return 0
+            else:
+                client_conn.send(data)
 
 def arg_setup():
     global ARG_PARSER
@@ -48,7 +52,7 @@ def arg_setup():
     ARG_PARSER.add_argument("--name", "-n", type=unicode, \
         help="Name to identify client by other than hostname")
     ARG_PARSER.add_argument("--version", "-v", action="version", \
-        version=u"%(prog)s " + unicode(stratus.__version__) )
+        version=u"stratus " + unicode(stratus.__version__) )
     initial = vars(ARG_PARSER.parse_args())
     used = {}
     for arg in initial:
@@ -60,9 +64,9 @@ def main():
     print (stratus.__logo__)
     args = arg_setup()
     if args["action"].lower() == "start":
-        action = server
+        action = start
     elif args["action"].lower() == "connect":
-        action = client
+        action = connect
     del args["action"]
     action(args)
     return 0
