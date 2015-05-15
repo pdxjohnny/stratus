@@ -74,6 +74,8 @@ def arg_setup():
         help="Username to connect to stratus server")
     ARG_PARSER.add_argument("--password", "-p", type=unicode, \
         help="Password to connect to stratus server")
+    ARG_PARSER.add_argument("--ssl", action='store_true', default=False, \
+        help="Connect to the server with ssl")
     ARG_PARSER.add_argument("--version", "-v", action="version", \
         version=u"stratus " + unicode(stratus.__version__) )
     initial = vars(ARG_PARSER.parse_args())

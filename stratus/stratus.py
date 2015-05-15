@@ -20,7 +20,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.17"
+__version__ = "0.0.18"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -219,15 +219,16 @@ class server(SimpleHTTPSServer.handler):
 
 class client(object):
     """docstring for client"""
-    def __init__(self, host="localhost", port=PORT, protocol="http", \
-        name=socket.gethostname(), update=20, recv=False):
+    def __init__(self, host="localhost", port=PORT, ssl=False, \
+        name=socket.gethostname(), update=20, recv=False, crt=False):
         super(client, self).__init__()
         self.host = host
         self.port = port
-        self.protocol = protocol
+        self.ssl = ssl
         self.name = name
         self.update = update
         self.recv = recv
+        self.crt = crt
         self.http_conncet()
 
     def http_conncet(self):
@@ -237,9 +238,13 @@ class client(object):
         values = (self.host, self.port, )
         host = "%s:%s" % values
         self.headers = {"Connection": "keep-alive"}
-        self.ping_conn = httplib.HTTPConnection(host)
-        self.send_conn = httplib.HTTPConnection(host)
-        self.recv_conn = sockhttp.conn(self.host, self.port)
+        if self.ssl:
+            self.ping_conn = httplib.HTTPSConnection(host)
+            self.send_conn = httplib.HTTPSConnection(host)
+        else:
+            self.ping_conn = httplib.HTTPConnection(host)
+            self.send_conn = httplib.HTTPConnection(host)
+        self.recv_conn = sockhttp.conn(self.host, self.port, ssl=self.ssl, crt=self.crt)
         self.recv_connect()
         return True
 

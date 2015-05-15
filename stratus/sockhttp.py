@@ -1,12 +1,15 @@
+import ssl as ssllib
 import socket
 
 class conn(object):
     """docstring for conn"""
-    def __init__(self, host, port):
+    def __init__(self, host, port, ssl=False, crt=None):
         super(conn, self).__init__()
         self.host = host
         self.port = port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if ssl:
+            self.socket = ssllib.wrap_socket(self.socket)
         self.socket.connect((self.host, self.port))
 
     def get( self, url ):
