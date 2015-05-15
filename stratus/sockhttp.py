@@ -3,17 +3,21 @@ import socket
 
 class conn(object):
     """docstring for conn"""
-    def __init__(self, host, port, ssl=False, crt=None):
+    def __init__(self, host, port, headers={}, ssl=False, crt=None):
         super(conn, self).__init__()
         self.host = host
         self.port = port
+        self.headers = headers
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         if ssl:
             self.socket = ssllib.wrap_socket(self.socket)
         self.socket.connect((self.host, self.port))
 
     def get( self, url ):
-        self.socket.sendall('GET %s HTTP/1.1\r\nConnection: keep-alive' % (url, ))
+        headers = ""
+        for line in self.headers:
+            headers += line + ': ' + self.headers[line] + "\r\n"
+        self.socket.sendall('GET %s HTTP/1.1\r\n%s\r\n\r\n' % (url, headers, ))
         data = self._recv(self.socket)
         res = "\n\n".join(data.split("\n\n")[1:])
         # Dont return the newlines

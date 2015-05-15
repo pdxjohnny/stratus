@@ -11,6 +11,7 @@ import urllib
 import Cookie
 import thread
 import urllib
+import base64
 import httplib
 import argparse
 import datetime
@@ -20,7 +21,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.18"
+__version__ = "0.0.19"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -220,12 +221,15 @@ class server(SimpleHTTPSServer.handler):
 class client(object):
     """docstring for client"""
     def __init__(self, host="localhost", port=PORT, ssl=False, \
-        name=socket.gethostname(), update=20, recv=False, crt=False):
+        name=socket.gethostname(), update=20, recv=False, crt=False, \
+        username=False, password=False):
         super(client, self).__init__()
         self.host = host
         self.port = port
         self.ssl = ssl
         self.name = name
+        self.username = username
+        self.password = password
         self.update = update
         self.recv = recv
         self.crt = crt
@@ -238,13 +242,17 @@ class client(object):
         values = (self.host, self.port, )
         host = "%s:%s" % values
         self.headers = {"Connection": "keep-alive"}
+        if self.username and self.password:
+            encoded = base64.b64encode(self.username + ':' + self.password)
+            self.headers["Authorization"] = "Basic " + encoded
         if self.ssl:
             self.ping_conn = httplib.HTTPSConnection(host)
             self.send_conn = httplib.HTTPSConnection(host)
         else:
             self.ping_conn = httplib.HTTPConnection(host)
             self.send_conn = httplib.HTTPConnection(host)
-        self.recv_conn = sockhttp.conn(self.host, self.port, ssl=self.ssl, crt=self.crt)
+        self.recv_conn = sockhttp.conn(self.host, self.port, \
+            headers=self.headers, ssl=self.ssl, crt=self.crt)
         self.recv_connect()
         return True
 
