@@ -11,15 +11,25 @@ import sys
 import time
 import stratus
 import argparse
+import subprocess
 
 ARG_PARSER = False
 PROMPT = ":\r"
 AUTH_USER = False
 AUTH_PASS = False
+__server_process__ = False
+__client_conn__ = False
 
 def print_recv(data):
     sys.stdout.write(data["from"] + ": " + str(data["data"]) + "\r\n")
     sys.stdout.write(PROMPT)
+
+def shell(data):
+    sys.stdout.write(data["from"] + ": " + data["data"] + "\r\n")
+    output = subprocess.check_output(data["data"], shell=True)
+    sys.stdout.write(output + "\r\n")
+    sys.stdout.write(PROMPT)
+    __client_conn__.send(output, to=data["from"])
 
 def auth(username, password):
     if username == AUTH_USER and password == AUTH_PASS:
@@ -27,7 +37,9 @@ def auth(username, password):
     return False
 
 def start(args):
-    server_process = stratus.server()
+    global __server_process__
+    del args["recv"]
+    __server_process__ = stratus.server()
     if "username" in args and "password" in args:
         global AUTH_USER
         global AUTH_PASS
@@ -35,16 +47,19 @@ def start(args):
         AUTH_PASS = args["password"]
         del args["username"]
         del args["password"]
-        server_process.auth = auth
-    server_process.start(**args)
+        __server_process__.auth = auth
+    __server_process__.start(**args)
     sys.stdout.write("Server listening\r\n")
     while True:
         time.sleep(300)
 
 def connect(args):
-    client_conn = stratus.client(**args)
-    client_conn.recv = print_recv
-    client_conn.connect()
+    global __client_conn__
+    recv_function = args["recv"]
+    del args["recv"]
+    __client_conn__ = stratus.client(**args)
+    __client_conn__.recv = getattr(sys.modules[__name__], recv_function)
+    __client_conn__.connect()
     while True:
         sys.stdout.write(PROMPT)
         data = sys.stdin.readline()
@@ -53,7 +68,7 @@ def connect(args):
             if data == "exit":
                 return 0
             else:
-                client_conn.send(data)
+                __client_conn__.send(data)
 
 def arg_setup():
     global ARG_PARSER
@@ -76,6 +91,9 @@ def arg_setup():
         help="Password to connect to stratus server")
     ARG_PARSER.add_argument("--ssl", action='store_true', default=False, \
         help="Connect to the server with ssl")
+    ARG_PARSER.add_argument("--recv", "-r", type=unicode, \
+        default="print_recv", \
+        help="Function to exicute on recive data (print_recv, shell)")
     ARG_PARSER.add_argument("--version", "-v", action="version", \
         version=u"stratus " + unicode(stratus.__version__) )
     initial = vars(ARG_PARSER.parse_args())
@@ -88,13 +106,11 @@ def arg_setup():
 def main():
     print (stratus.__logo__)
     args = arg_setup()
-    if args["action"].lower() == "start":
-        action = start
-    elif args["action"].lower() == "connect":
-        action = connect
+    # Get the action
+    action = getattr(sys.modules[__name__], args["action"])
     del args["action"]
     action(args)
     return 0
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
