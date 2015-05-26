@@ -21,7 +21,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.20"
+__version__ = "0.0.21"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -42,6 +42,7 @@ class server(SimpleHTTPSServer.handler):
         self.clients = {}
         self.data = {}
         self.auth = False
+        self.disconnect = False
         self.actions = [
             ('post', '/ping/:name', self.post_ping, self.authenticate),
             ('get', '/ping/:name', self.get_ping, self.authenticate),
@@ -134,6 +135,9 @@ class server(SimpleHTTPSServer.handler):
         else:
             if curr_time - self.timeout > \
                 self.clients[node_name]["last_update"]:
+                self.clients[node_name]["online"] = False
+                if self.disconnect:
+                    self.disconnect(self.clients[node_name])
                 del self.clients[node_name]
                 if node_name in self.conns:
                     del self.conns[node_name]

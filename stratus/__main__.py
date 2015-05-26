@@ -20,6 +20,9 @@ AUTH_PASS = False
 __server_process__ = False
 __client_conn__ = False
 
+def print_disconnect(client):
+    print(client)
+
 def print_recv(data):
     sys.stdout.write(data["from"] + ": " + str(data["data"]) + "\r\n")
     sys.stdout.write(PROMPT)
@@ -48,6 +51,7 @@ def start(args):
         del args["username"]
         del args["password"]
         __server_process__.auth = auth
+    __server_process__.disconnect = print_disconnect
     __server_process__.start(**args)
     sys.stdout.write("Server listening\r\n")
     while True:
