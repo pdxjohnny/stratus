@@ -21,7 +21,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.21"
+__version__ = "0.0.22"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -39,6 +39,9 @@ class server(SimpleHTTPSServer.handler):
         super(server, self).__init__()
         self.node_timeout(1, 60)
         self.conns = {}
+        # Clients that have datetime objects in them
+        self.clientsd = {}
+        # Clients that don't have datetime objects in them
         self.clients = {}
         self.data = {}
         self.auth = False
@@ -100,7 +103,7 @@ class server(SimpleHTTPSServer.handler):
         return self.end_response(headers, output)
 
     def get_connected(self, request):
-        output = json.dumps(self.clients, default=self.date_handler)
+        output = json.dumps(self.clientsd, default=self.date_handler)
         headers = self.create_header()
         headers["Content-Type"] = "application/json"
         return self.end_response(headers, output)
@@ -115,7 +118,7 @@ class server(SimpleHTTPSServer.handler):
     def update_status(self):
         while True:
             try:
-                for node in self.clients:
+                for node in self.clientsd:
                     self.node_status(node)
                 time.sleep(self.timeout_seconds)
             except RuntimeError, error:
@@ -125,25 +128,28 @@ class server(SimpleHTTPSServer.handler):
     def node_status(self, node_name, update=False, conn=False):
         curr_time = datetime.datetime.now()
         # Create node
-        if not node_name in self.clients:
-            self.clients[node_name] = self.node(node_name, curr_time)
+        if not node_name in self.clientsd:
+            self.clientsd[node_name] = self.node(node_name, curr_time)
         # Update time
         elif update:
-            self.clients[node_name]["last_update"] = curr_time
-            self.clients[node_name]["online"] = True
+            self.clientsd[node_name]["last_update"] = curr_time
+            self.clientsd[node_name]["online"] = True
         # Offline
         else:
             if curr_time - self.timeout > \
-                self.clients[node_name]["last_update"]:
-                self.clients[node_name]["online"] = False
+                self.clientsd[node_name]["last_update"]:
+                self.clientsd[node_name]["online"] = False
                 if self.disconnect:
-                    self.disconnect(self.clients[node_name])
-                del self.clients[node_name]
+                    self.disconnect(self.clientsd[node_name])
+                del self.clientsd[node_name]
                 if node_name in self.conns:
                     del self.conns[node_name]
         # Connect recv socket
         if conn:
             self.conns[node_name] = conn
+        # Stringify the datetimes
+        self.clients = json.loads(json.dumps(self.clientsd, \
+            default=self.date_handler))
 
     def node(self, name, curr_time=False):
         # Don't have to call datetime.datetime.now() is provided
@@ -177,12 +183,12 @@ class server(SimpleHTTPSServer.handler):
         return False
 
     def send_messages(self, to):
-        clients = []
+        clientsd = []
         if to == ALL_CLIENTS:
-            clients = list(self.conns.keys())
+            clientsd = list(self.conns.keys())
         else:
-            clients = [to]
-        for client_name in clients:
+            clientsd = [to]
+        for client_name in clientsd:
             thread.start_new_thread( self.send_message, (client_name, ))
 
     def send_message(self, to):
@@ -209,7 +215,7 @@ class server(SimpleHTTPSServer.handler):
                         new_messages.append(append)
                 for item in xrange(0, len(self.data[name])):
                     if len(self.data[name]) and \
-                        len(self.data[name][item]["seen"]) >= len(self.clients):
+                        len(self.data[name][item]["seen"]) >= len(self.clientsd):
                         del self.data[name][item]
         return new_messages
 
