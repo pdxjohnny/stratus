@@ -73,6 +73,7 @@ def connect(args):
             if data == "exit":
                 return 0
             if data.startswith("info"):
+                data = data[5:]
                 __client_conn__.info(data)
             else:
                 __client_conn__.send(data)
