@@ -9,6 +9,7 @@ Facilitates connections
 
 import sys
 import time
+import json
 import stratus
 import argparse
 import subprocess
@@ -71,6 +72,8 @@ def connect(args):
             data = data[:-1]
             if data == "exit":
                 return 0
+            if data.startswith("info"):
+                __client_conn__.info(data)
             else:
                 __client_conn__.send(data)
 

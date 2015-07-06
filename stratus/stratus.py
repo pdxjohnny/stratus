@@ -21,7 +21,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.22"
+__version__ = "0.0.23"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -47,6 +47,7 @@ class server(SimpleHTTPSServer.handler):
         self.auth = False
         self.disconnect = False
         self.actions = [
+            ('post', '/info/:name', self.post_info, self.authenticate),
             ('post', '/ping/:name', self.post_ping, self.authenticate),
             ('get', '/ping/:name', self.get_ping, self.authenticate),
             ('get', '/connect/:name', self.get_connect, self.authenticate),
@@ -73,6 +74,7 @@ class server(SimpleHTTPSServer.handler):
         return SimpleHTTPSServer.SEND_BASIC_AUTH
 
     def post_ping(self, request):
+        # Update the status of the node
         self.node_status(request["variables"]["name"], update=True)
         # Add message to be sent out
         recv_data = self.form_data(request['data'])
@@ -80,6 +82,15 @@ class server(SimpleHTTPSServer.handler):
             recv_data["data"], recv_data["to"])
         self.add_message(recv_data)
         thread.start_new_thread( self.send_messages, (recv_data["to"], ))
+        # Get messages for sender
+        return self.get_messages(request)
+
+    def post_info(self, request):
+        # Get the info
+        recv_data = self.form_data(request['data'])
+        # Add the info to the node and update the status of the node
+        self.node_status(request["variables"]["name"], update=True, \
+            info=recv_data["info"])
         # Get messages for sender
         return self.get_messages(request)
 
@@ -125,7 +136,7 @@ class server(SimpleHTTPSServer.handler):
                 # Dictionary size change is ok
                 pass
 
-    def node_status(self, node_name, update=False, conn=False):
+    def node_status(self, node_name, update=False, conn=False, info=False):
         curr_time = datetime.datetime.now()
         # Create node
         if not node_name in self.clientsd:
@@ -134,6 +145,11 @@ class server(SimpleHTTPSServer.handler):
         elif update:
             self.clientsd[node_name]["last_update"] = curr_time
             self.clientsd[node_name]["online"] = True
+        # Info
+        if info:
+            info = self.json(info)
+            if info:
+                self.clientsd[node_name].update(info)
         # Offline
         else:
             if curr_time - self.timeout > \
@@ -227,6 +243,18 @@ class server(SimpleHTTPSServer.handler):
             self.timeout = datetime.timedelta(seconds=delta)
         return self.timeout
 
+    def json(self, res):
+        """
+        Returns json if it can.
+        """
+        if isinstance(res, dict) or isinstance(res, list):
+            return res
+        try:
+            res = json.loads(res)
+            return res
+        except (ValueError, KeyError):
+            return False
+
 
 class client(object):
     """docstring for client"""
@@ -276,14 +304,9 @@ class client(object):
                 for item in xrange(0, len(res)):
                     data = res[item]
                     data["__name__"] = self.name
-                    if ( data["data"][0] == '{' and \
-                        data["data"][-1] == '}' ) \
-                        or ( data["data"][0] == '[' and \
-                            data["data"][-1] == ']' ):
-                        try:
-                            data["data"] = json.loads(data["data"])
-                        except Exception, e:
-                            pass
+                    as_json = self.json(data["data"])
+                    if as_json:
+                        data["data"] = json.loads(data["data"])
                     self.recv(data)
             return True
         except (ValueError, KeyError):
@@ -313,7 +336,7 @@ class client(object):
             self.http_conncet()
         return res
 
-    def post(self, url, data):
+    def post(self, url, data, reconnect=True):
         """
         Requests the page and returns data
         """
@@ -321,15 +344,15 @@ class client(object):
         try:
             headers = self.headers.copy()
             headers["Content-Type"] = "application/x-www-form-urlencoded"
-            for item in data:
-                data[item] = data[item]
             data = urllib.urlencode(data, True).replace("+", "%20")
             self.send_conn.request("POST", "/" + url, data, headers)
             res = self.send_conn.getresponse()
             res = res.read()
         except (httplib.BadStatusLine), error:
-            print("Reconecting")
-            self.http_conncet()
+            if reconnect:
+                print("Reconecting")
+                self.http_conncet()
+                self.post(url, data, reconnect=False)
         return res
 
     def connect(self):
@@ -378,6 +401,16 @@ class client(object):
         if type(data) != str and type(data) != unicode:
             data = json.dumps(data)
         res = self.post(url, {"to": to, "data": data})
+        return self.return_status(res)
+
+    def info(self, data):
+        """
+        Queues data for sending
+        """
+        url = "info/" + self.name
+        if type(data) != str and type(data) != unicode:
+            data = json.dumps(data)
+        res = self.post(url, {"info": data})
         return self.return_status(res)
 
     def connected(self):
