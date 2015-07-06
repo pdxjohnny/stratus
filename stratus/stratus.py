@@ -21,7 +21,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.24"
+__version__ = "0.0.25"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -75,7 +75,8 @@ class server(SimpleHTTPSServer.handler):
 
     def post_ping(self, request):
         # Update the status of the node
-        self.node_status(request["variables"]["name"], update=True)
+        self.node_status(request["variables"]["name"], update=True, \
+            ip=request["socket"])
         # Add message to be sent out
         recv_data = self.form_data(request['data'])
         recv_data = self.message(request["variables"]["name"], \
@@ -90,18 +91,19 @@ class server(SimpleHTTPSServer.handler):
         recv_data = self.form_data(request['data'])
         # Add the info to the node and update the status of the node
         self.node_status(request["variables"]["name"], update=True, \
-            info=recv_data["info"])
+            info=recv_data["info"], ip=request["socket"])
         # Get messages for sender
         return self.get_messages(request)
 
     def get_ping(self, request):
-        self.node_status(request["variables"]["name"], update=True)
+        self.node_status(request["variables"]["name"], update=True, \
+            ip=request["socket"])
         # Get messages for sender
         return self.get_messages(request)
 
     def get_connect(self, request):
         self.node_status(request["variables"]["name"], update=True, \
-            conn=request["socket"])
+            conn=request["socket"], ip=request["socket"])
         # Get messages for sender
         return self.get_messages(request)
 
@@ -136,7 +138,8 @@ class server(SimpleHTTPSServer.handler):
                 # Dictionary size change is ok
                 pass
 
-    def node_status(self, node_name, update=False, conn=False, info=False):
+    def node_status(self, node_name, update=False, conn=False, \
+        info=False, ip=False):
         curr_time = datetime.datetime.now()
         # Create node
         if not node_name in self.clientsd:
@@ -150,6 +153,9 @@ class server(SimpleHTTPSServer.handler):
             info = self.json(info)
             if info:
                 self.clientsd[node_name].update(info)
+        # Get client ip address
+        if ip:
+            self.clientsd[node_name]["ip"] = ip.getpeername()[0]
         # Offline
         else:
             if curr_time - self.timeout > \
