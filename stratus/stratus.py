@@ -21,7 +21,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.25"
+__version__ = "0.0.26"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -46,6 +46,7 @@ class server(SimpleHTTPSServer.handler):
         self.data = {}
         self.auth = False
         self.disconnect = False
+        self.client_change = False
         self.actions = [
             ('post', '/info/:name', self.post_info, self.authenticate),
             ('post', '/ping/:name', self.post_ping, self.authenticate),
@@ -172,6 +173,9 @@ class server(SimpleHTTPSServer.handler):
         # Stringify the datetimes
         self.clients = json.loads(json.dumps(self.clientsd, \
             default=self.date_handler))
+        # If there is a function that needs to be called when a client changes
+        if self.client_change:
+            self.client_change(self.clients)
 
     def node(self, name, curr_time=False):
         # Don't have to call datetime.datetime.now() is provided
