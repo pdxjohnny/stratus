@@ -21,7 +21,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.26"
+__version__ = "0.0.27"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -344,7 +344,7 @@ class client(object):
             http_conn.request("GET", "/" + url, headers=self.headers)
             res = http_conn.getresponse()
             res = res.read()
-        except (httplib.BadStatusLine), error:
+        except (httplib.BadStatusLine, httplib.CannotSendRequest), error:
             self.log("Reconecting")
             self.http_conncet()
         return res
@@ -363,7 +363,7 @@ class client(object):
             self.send_conn.request("POST", "/" + url, data, headers)
             res = self.send_conn.getresponse()
             res = res.read()
-        except (httplib.BadStatusLine), error:
+        except (httplib.BadStatusLine, httplib.CannotSendRequest), error:
             if reconnect:
                 self.log("Reconecting")
                 self.http_conncet()
