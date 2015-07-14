@@ -40,6 +40,34 @@ def auth(username, password):
         return True
     return False
 
+def master(args):
+    global __server_process__
+    __server_process__ = stratus.stratus()
+    if "username" in args and "password" in args:
+        global AUTH_USER
+        global AUTH_PASS
+        AUTH_USER = args["username"]
+        AUTH_PASS = args["password"]
+        del args["username"]
+        del args["password"]
+        __server_process__.auth = auth
+    __server_process__.disconnect = print_disconnect
+    __server_process__.start(**args)
+    __server_process__.recv = getattr(sys.modules[__name__], args["recv"])
+    sys.stdout.write("Server listening\r\n")
+    while True:
+        sys.stdout.write(PROMPT)
+        data = sys.stdin.readline()
+        if len(data) > 1:
+            data = data[:-1]
+            if data == "exit":
+                return 0
+            if data.startswith("info"):
+                data = data[5:]
+                __server_process__.info(data)
+            else:
+                __server_process__.send(data)
+
 def start(args):
     global __server_process__
     del args["recv"]
@@ -62,9 +90,9 @@ def connect(args):
     global __client_conn__
     recv_function = args["recv"]
     del args["recv"]
-    __client_conn__ = stratus.client(**args)
+    __client_conn__ = stratus.client()
+    __client_conn__.connect(**args)
     __client_conn__.recv = getattr(sys.modules[__name__], recv_function)
-    __client_conn__.connect()
     while True:
         sys.stdout.write(PROMPT)
         data = sys.stdin.readline()

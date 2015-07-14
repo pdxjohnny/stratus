@@ -17,6 +17,7 @@ import argparse
 import datetime
 import traceback
 import mimetypes
+import multiprocessing
 import SimpleHTTPSServer
 
 import sockhttp
@@ -30,26 +31,35 @@ __logo__ = """
 (___/ (__) (_)\_)(__)(__)(__) (______)(___/
 """
 PORT = 5678
+TIME_OUT = 20
 ALL_CLIENTS = "__all__"
-
+CONNECTION_REFUSED = "Connection Refused"
 
 class server(SimpleHTTPSServer.handler):
     """docstring for handler"""
     def __init__(self):
         super(server, self).__init__()
-        self.node_timeout(1, 60)
+        # self.manager = multiprocessing.Manager()
+        self.node_timeout(1, TIME_OUT)
         self.conns = {}
         # Clients that have datetime objects in them
         self.clientsd = {}
         # Clients that don't have datetime objects in them
         self.clients = {}
+        # For sending messages
         self.data = {}
+        # self.data = self.manager.dict()
         self.auth = False
+        self.connect = False
         self.disconnect = False
         self.client_change = False
+        # Loops through the array of callable nodes
+        self.rotate_call = 0
         self.actions = [
             ('post', '/info/:name', self.post_info, self.authenticate),
             ('post', '/ping/:name', self.post_ping, self.authenticate),
+            ('post', '/call/:name', self.post_call, self.authenticate),
+            ('post', '/call_return/:name', self.post_call_return, self.authenticate),
             ('get', '/ping/:name', self.get_ping, self.authenticate),
             ('get', '/connect/:name', self.get_connect, self.authenticate),
             ('get', '/messages/:name', self.get_messages, self.authenticate),
@@ -63,7 +73,7 @@ class server(SimpleHTTPSServer.handler):
     def date_handler(self, obj):
         return obj.isoformat() if hasattr(obj, 'isoformat') else obj
 
-    def authenticate( self, request ):
+    def authenticate(self, request ):
         if not self.auth:
             return True
         authorized, response = self.basic_auth(request)
@@ -83,7 +93,58 @@ class server(SimpleHTTPSServer.handler):
         recv_data = self.message(request["variables"]["name"], \
             recv_data["data"], recv_data["to"])
         self.add_message(recv_data)
-        thread.start_new_thread( self.send_messages, (recv_data["to"], ))
+        thread.start_new_thread(self.send_messages, (recv_data["to"], ))
+        # Get messages for sender
+        return self.get_messages(request)
+
+    def post_call(self, request):
+        # Update the status of the node
+        self.node_status(request["variables"]["name"], update=True, \
+            ip=request["socket"])
+        # Add message to be sent out
+        recv_data = self.form_data(request['data'])
+        # print "SERVER RECEVED CALL"
+        # print recv_data["call"]
+        # Distribute the load
+        call_node = self.call_node()
+        # If there are service nodes to call
+        if call_node:
+            # Send that call out to the node
+            recv_data = self.message(request["variables"]["name"], \
+                recv_data["call"], call_node, name="call")
+            # If the service is being sent its own request then
+            if request["variables"]["name"] in recv_data["seen"] \
+                and request["variables"]["name"] == recv_data["to"]:
+                recv_data["seen"].remove(request["variables"]["name"])
+            # print "ADDING MESSAGE"
+            # print recv_data
+            self.add_message(recv_data)
+            thread.start_new_thread(self.send_messages, (call_node, ))
+        # Get messages for sender
+        return self.get_messages(request)
+
+    def post_call_return(self, request):
+        # Update the status of the node
+        self.node_status(request["variables"]["name"], update=True, \
+            ip=request["socket"])
+        # Add message to be sent out
+        recv_data = self.form_data(request['data'])
+        # print "SERVER RECEVED CALL RETURN"
+        # Send that call out to the node
+        recv_data = self.message(request["variables"]["name"], \
+            recv_data["call_return"], recv_data["to"], name="call_return")
+        # If the service is being sent its own request then
+        if request["variables"]["name"] in recv_data["seen"] \
+            and request["variables"]["name"] == recv_data["to"]:
+            recv_data["seen"].remove(request["variables"]["name"])
+        # print recv_data["call_return"]
+        # print recv_data
+        self.add_message(recv_data)
+        # print hex(id(self.data))
+        # print json.dumps(self.data, indent=4, sort_keys=True)
+        # print "MESSAGES", recv_data["to"]
+        # print json.dumps(self.messages(recv_data["to"]), indent=4, sort_keys=True)
+        thread.start_new_thread(self.send_messages, (recv_data["to"], ))
         # Get messages for sender
         return self.get_messages(request)
 
@@ -122,12 +183,27 @@ class server(SimpleHTTPSServer.handler):
         headers["Content-Type"] = "application/json"
         return self.end_response(headers, output)
 
-    def start(self, host="0.0.0.0", port=PORT, key=False, crt=False):
+    def start(self, host="0.0.0.0", port=PORT, key=False, crt=False, **kwargs):
         thread.start_new_thread(self.update_status, ())
         server_process = SimpleHTTPSServer.server((host, port), self, \
             bind_and_activate=False, threading=True, \
             key=key, crt=crt)
         return thread.start_new_thread(server_process.serve_forever, ())
+
+    def call_node(self, service_type=True):
+        res = False
+        services = [name for name in self.clientsd \
+            if "service" in self.clientsd[name] \
+            and self.clientsd[name]["service"] == service_type]
+        # print "DETRIMINING NODE TO CALL"
+        # print self.rotate_call, services
+        self.rotate_call += 1
+        # Set back to zero once we have called on all nodes
+        if self.rotate_call >= len(services):
+            self.rotate_call = 0
+        if len(services) > 0:
+            res = services[self.rotate_call]
+        return res
 
     def update_status(self):
         while True:
@@ -145,6 +221,8 @@ class server(SimpleHTTPSServer.handler):
         # Create node
         if not node_name in self.clientsd:
             self.clientsd[node_name] = self.node(node_name, curr_time)
+            if self.connect:
+                self.connect(self.clientsd[node_name])
         # Update time
         elif update:
             self.clientsd[node_name]["last_update"] = curr_time
@@ -187,11 +265,11 @@ class server(SimpleHTTPSServer.handler):
             "online": True
         }
 
-    def message(self, sent_by, data, to=ALL_CLIENTS):
+    def message(self, sent_by, data, to=ALL_CLIENTS, name="data"):
         return {
             "to": to,
             "from": sent_by,
-            "data": data,
+            name: data,
             "seen": [sent_by]
         }
 
@@ -215,7 +293,7 @@ class server(SimpleHTTPSServer.handler):
         else:
             clientsd = [to]
         for client_name in clientsd:
-            thread.start_new_thread( self.send_message, (client_name, ))
+            thread.start_new_thread(self.send_message, (client_name, ))
 
     def send_message(self, to):
         # Get messages for to
@@ -240,9 +318,12 @@ class server(SimpleHTTPSServer.handler):
                         del append["seen"]
                         new_messages.append(append)
                 for item in xrange(0, len(self.data[name])):
-                    if len(self.data[name]) and \
-                        len(self.data[name][item]["seen"]) >= len(self.clientsd):
-                        del self.data[name][item]
+                    try:
+                        if len(self.data[name]) and \
+                            len(self.data[name][item]["seen"]) >= len(self.clientsd):
+                            del self.data[name][item]
+                    except IndexError as error:
+                        pass
         return new_messages
 
     def node_timeout(self, loop=False, delta=False):
@@ -268,44 +349,48 @@ class server(SimpleHTTPSServer.handler):
 
 class client(object):
     """docstring for client"""
-    def __init__(self, host="localhost", port=PORT, ssl=False, \
-        name=socket.gethostname(), update=20, recv=False, crt=False, \
-        username=False, password=False):
+    def __init__(self):
         super(client, self).__init__()
-        self.host = host
-        self.port = port
-        self.ssl = ssl
-        self.name = name
-        self.username = username
-        self.password = password
-        self.update = update
-        self.recv = recv
-        self.crt = crt
-        self.http_conncet()
+        self.manager = multiprocessing.Manager()
+        self.host = "localhost"
+        self.port = PORT
+        self.ssl = False
+        self.name = socket.gethostname()
+        self.username = False
+        self.password = False
+        self.update = TIME_OUT - 5
+        self.recv = False
+        self.connect_fail = False
+        self.crt = False
 
     def log(self, message):
-        del message
+        print message
 
     def http_conncet(self):
         """
         Connects to the server with tcp http connections.
         """
-        values = (self.host, self.port, )
-        host = "%s:%s" % values
         self.headers = {"Connection": "keep-alive"}
         if self.username and self.password:
             encoded = base64.b64encode(self.username + ':' + self.password)
             self.headers["Authorization"] = "Basic " + encoded
-        if self.ssl:
-            self.ping_conn = httplib.HTTPSConnection(host)
-            self.send_conn = httplib.HTTPSConnection(host)
-        else:
-            self.ping_conn = httplib.HTTPConnection(host)
-            self.send_conn = httplib.HTTPConnection(host)
-        self.recv_conn = sockhttp.conn(self.host, self.port, \
-            headers=self.headers, ssl=self.ssl, crt=self.crt)
-        self.recv_connect()
+        try:
+            self.ping_conn = self.httplib_conn()
+            self.send_conn = self.httplib_conn()
+            self.recv_conn = sockhttp.conn(self.host, self.port, \
+                headers=self.headers, ssl=self.ssl, crt=self.crt)
+            self.recv_connect()
+        except socket.error as error:
+            self._connection_failed(error)
         return True
+
+    def httplib_conn(self):
+        values = (self.host, self.port, )
+        host = "%s:%s" % values
+        if self.ssl:
+            return httplib.HTTPSConnection(host)
+        else:
+            return httplib.HTTPConnection(host)
 
     def return_status(self, res):
         """
@@ -313,27 +398,55 @@ class client(object):
         """
         try:
             res = json.loads(res)
-            if len(res) > 0 and self.recv:
+            if len(res) > 0 and hasattr(self.recv, '__call__'):
                 for item in xrange(0, len(res)):
                     data = res[item]
                     data["__name__"] = self.name
-                    as_json = self.json(data["data"])
-                    if as_json:
-                        data["data"] = json.loads(data["data"])
-                    self.recv(data)
+                    self.call_recv(data)
             return True
         except (ValueError, KeyError):
             return False
+
+    def call_recv(self, data):
+        if "data" in data:
+            as_json = self.json(data["data"])
+            if as_json:
+                data["data"] = json.loads(data["data"])
+            thread.start_new_thread(self.recv, (data, ))
+        elif "call" in data:
+            as_json = self.json(data["call"])
+            if as_json:
+                data["call"] = json.loads(data["call"])
+            # Call and send back result
+            thread.start_new_thread(self.call_method, (data, ))
+        elif "call_return" in data:
+            as_json = self.json(data["call_return"])
+            if as_json:
+                data["call_return"] = json.loads(data["call_return"])
+            # Call and send back result
+            print "GOT CALL RETURN"
+            print data["call_return"]
+            # thread.start_new_thread(self.return_method, data["call_return"])
 
     def json(self, res):
         """
         Returns json if it can.
         """
+        if isinstance(res, dict) or isinstance(res, list):
+            return res
         try:
             res = json.loads(res)
             return res
         except (ValueError, KeyError):
             return False
+
+    def _connection_failed(self, error):
+        if "111" in str(error):
+            self.log(CONNECTION_REFUSED)
+            if hasattr(self.connect_fail, '__call__'):
+                self.connect_fail()
+        else:
+            raise
 
     def get(self, url, http_conn):
         """
@@ -341,12 +454,15 @@ class client(object):
         """
         res = ""
         try:
+            url = urllib.quote(url, safe='')
             http_conn.request("GET", "/" + url, headers=self.headers)
             res = http_conn.getresponse()
             res = res.read()
         except (httplib.BadStatusLine, httplib.CannotSendRequest), error:
             self.log("Reconecting")
             self.http_conncet()
+        except socket.error as error:
+            self._connection_failed(error)
         return res
 
     def post(self, url, data, reconnect=True):
@@ -355,25 +471,40 @@ class client(object):
         """
         res = ""
         try:
+            connection = self.httplib_conn()
+            url = urllib.quote(url, safe='')
             headers = self.headers.copy()
             headers["Content-Type"] = "application/x-www-form-urlencoded"
             # So we don't urlencode twice
             if reconnect:
                 data = urllib.urlencode(data, True).replace("+", "%20")
-            self.send_conn.request("POST", "/" + url, data, headers)
-            res = self.send_conn.getresponse()
+            connection.request("POST", "/" + url, data, headers)
+            res = connection.getresponse()
             res = res.read()
         except (httplib.BadStatusLine, httplib.CannotSendRequest), error:
             if reconnect:
                 self.log("Reconecting")
                 self.http_conncet()
                 self.post(url, data, reconnect=False)
+        except socket.error as error:
+            self._connection_failed(error)
         return res
 
-    def connect(self):
+    def connect(self, host="localhost", port=PORT, ssl=False, \
+        name=socket.gethostname(), update=TIME_OUT, crt=False, \
+        username=False, password=False, **kwargs):
         """
         Starts main
         """
+        self.host = host
+        self.port = port
+        self.ssl = ssl
+        self.name = name
+        self.username = username
+        self.password = password
+        self.update = update
+        self.crt = crt
+        self.http_conncet()
         return thread.start_new_thread(self.main, ())
 
     def main(self):
@@ -398,7 +529,7 @@ class client(object):
         while True:
             res = self.recv_conn.recv()
             if len(res):
-                self.return_status(res)
+                thread.start_new_thread(self.return_status, (res, ))
 
     def ping(self):
         """
@@ -416,6 +547,23 @@ class client(object):
         if type(data) != str and type(data) != unicode:
             data = json.dumps(data)
         res = self.post(url, {"to": to, "data": data})
+        return self.return_status(res)
+
+    def call(self, name, *args, **kwargs):
+        """
+        Calls a function on a node
+        """
+        url = "call/" + self.name
+        data = {
+            # So we know where the return value will go
+            "return_key": str(name),
+            "name": name,
+            "args": args,
+            "kwargs": kwargs
+        }
+        if type(data) != str and type(data) != unicode:
+            data = json.dumps(data)
+        res = self.post(url, {"call": data})
         return self.return_status(res)
 
     def info(self, data):
@@ -448,6 +596,85 @@ class client(object):
                     online[item] = connected[item]
         return online
 
+class shared_bool(object):
+    """
+    Shares a bool between processes
+    """
+    def __init__(self, initval=False):
+        self.val = multiprocessing.Value('i', initval)
+        self.lock = multiprocessing.Lock()
+
+    def __call__(self, value=None):
+        if value is not None:
+            with self.lock:
+                self.val.value = value
+        with self.lock:
+            value = self.val.value
+        return value
+
+class service(client):
+    """
+    Services connect to the stratus server
+    and clients can call their methods
+    """
+    def __init__(self):
+        super(service, self).__init__()
+
+    def call_method(self, data):
+        send_to = data["from"]
+        call_data = data["call"]
+        # print "CALLING METHOD"
+        # print send_to, call_data
+        res = False
+        # Get the function
+        found_method = getattr(self, call_data["name"])
+        # Call the function
+        res = found_method(*call_data["args"], **call_data["kwargs"])
+        return self.call_return(res, send_to)
+
+    def call_return(self, data, to):
+        """
+        Returns the result of a call back to caller
+        """
+        url = "call_return/" + self.name
+        # print "CLIENT SENDING CALL RETURN"
+        # print self.name, to, data
+        if type(data) != str and type(data) != unicode:
+            data = json.dumps(data)
+        res = self.post(url, {"to": to, "call_return": data})
+        return self.return_status(res)
+
+    def connect(self, *args, **kwargs):
+        super(service, self).connect(*args, **kwargs)
+        # Tell the server that this is a service
+        self.info({"service": True})
+
+
+class stratus(server, client):
+    """
+    Fault tollerent server and client
+    Will connet to master and continue to chose
+    next master if master goes down
+    """
+    def __init__(self):
+        super(stratus, self).__init__()
+        self.master = []
+        self.connect = self.update_master
+        self.disconnect = self.update_master
+        self.connect_fail = self.check_master
+
+    def start(self, *args, **kwargs):
+        super(stratus, self).start(*args, **kwargs)
+        kwargs["name"] = "__stratus_master__"
+        super(stratus, self).connect(*args, **kwargs)
+
+    def update_master(self, new_node):
+        self.master = [name for name in self.clientsd]
+        print self.master
+
+    def log(self, message):
+        # print message
+        return
 
 def print_recv(data):
     print(data)

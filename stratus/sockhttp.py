@@ -1,3 +1,4 @@
+import urllib
 import ssl as ssllib
 import socket
 
@@ -17,7 +18,9 @@ class conn(object):
         headers = ""
         for line in self.headers:
             headers += line + ': ' + self.headers[line] + "\r\n"
-        self.socket.sendall('GET %s HTTP/1.1\r\n%s\r\n\r\n' % (url, headers, ))
+        url = '/' + urllib.quote(url[1:], safe='')
+        send_message = 'GET %s HTTP/1.1\r\n%s\r\n\r\n' % (url, headers, )
+        self.socket.sendall(send_message)
         data = self._recv(self.socket)
         res = "\n\n".join(data.split("\n\n")[1:])
         # Dont return the newlines
