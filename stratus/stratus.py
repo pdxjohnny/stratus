@@ -104,8 +104,9 @@ class server(SimpleHTTPSServer.handler):
         recv_data = self.form_data(request['data'])
         # print "SERVER RECEVED CALL"
         # print recv_data["call"]
+        service_name = recv_data.get("service", True)
         # Distribute the load
-        call_node = self.call_node()
+        call_node = self.call_node(service_name)
         # If there are service nodes to call
         if call_node:
             # Send that call out to the node
@@ -199,6 +200,7 @@ class server(SimpleHTTPSServer.handler):
             if "service" in self.clientsd[name] \
             and self.clientsd[name]["service"] == service_type]
         # print "DETRIMINING NODE TO CALL"
+        # print service_type
         # print self.rotate_call, services
         self.rotate_call += 1
         # Set back to zero once we have called on all nodes
@@ -568,13 +570,16 @@ class client(server):
         res = self.post(url, {"to": to, "data": data})
         return self.return_status(res)
 
-    def call(self, name, *args, **kwargs):
+    def __call__(self, *args, **kwargs):
+        return self.call(*args, **kwargs)
+
+    def call(self, service, method, *args, **kwargs):
         """
-        Calls a function on a node
+        Calls a method on a node
         """
         url = "call/" + self.name
         call_args = {
-            "name": name,
+            "name": method,
             "args": args,
             "kwargs": kwargs
         }
@@ -582,6 +587,7 @@ class client(server):
             call_args = json.dumps(call_args)
         data = {
             "call": call_args,
+            "service": service,
             # So we know where to return to
             "return_key": str(uuid.uuid4())
         }
@@ -628,6 +634,7 @@ class service(client):
     """
     def __init__(self):
         super(service, self).__init__()
+        self.service_name = True
 
     def call_recv(self, data, *args, **kwargs):
         super(service, self).call_recv(data, *args, **kwargs)
@@ -672,8 +679,14 @@ class service(client):
 
     def connect(self, *args, **kwargs):
         super(service, self).connect(*args, **kwargs)
+        if "service" in kwargs:
+            self.service(kwargs["service"])
+        self.service(self.service_name)
+
+    def service(self, service_name):
+        self.service_name = service_name
         # Tell the server that this is a service
-        self.info({"service": True})
+        self.info({"service": self.service_name})
 
 
 class stratus(service):

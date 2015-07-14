@@ -9,7 +9,7 @@ __server_process__ = False
 __client_conn__ = []
 
 PROMPT = ":\r"
-NUM_CLIENTS = 10
+NUM_CLIENTS = 2
 
 def print_recv(arg):
     print arg
@@ -18,6 +18,7 @@ class callme(stratus.stratus):
     """docstring for callme"""
     def __init__(self):
         super(callme, self).__init__()
+        self.service_name = "callme"
         self.called = 0
         self.myid = str(uuid.uuid4())[:4]
 
@@ -48,7 +49,7 @@ def main():
     # Call the methods
     for i in xrange(0, NUM_CLIENTS):
         for j in __client_conn__:
-            res.append(j.call("a_method", i, i+3, three=str(i)*4))
+            res.append(j.call("callme", "a_method", i, i+3, three=str(i)*4))
     for i in res:
         i = i()
         print i, type(i)
