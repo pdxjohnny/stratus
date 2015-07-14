@@ -5,6 +5,7 @@ import sys
 import ssl
 import json
 import time
+import uuid
 import copy
 import socket
 import urllib
@@ -110,15 +111,17 @@ class server(SimpleHTTPSServer.handler):
         # If there are service nodes to call
         if call_node:
             # Send that call out to the node
-            recv_data = self.message(request["variables"]["name"], \
+            recv_message = self.message(request["variables"]["name"], \
                 recv_data["call"], call_node, name="call")
             # If the service is being sent its own request then
-            if request["variables"]["name"] in recv_data["seen"] \
-                and request["variables"]["name"] == recv_data["to"]:
-                recv_data["seen"].remove(request["variables"]["name"])
+            if request["variables"]["name"] in recv_message["seen"] \
+                and request["variables"]["name"] == recv_message["to"]:
+                recv_message["seen"].remove(request["variables"]["name"])
+            if "return_key" in recv_data:
+                recv_message["return_key"] = recv_data["return_key"]
             # print "ADDING MESSAGE"
-            # print recv_data
-            self.add_message(recv_data)
+            # print recv_message
+            self.add_message(recv_message)
             thread.start_new_thread(self.send_messages, (call_node, ))
         # Get messages for sender
         return self.get_messages(request)
@@ -131,15 +134,17 @@ class server(SimpleHTTPSServer.handler):
         recv_data = self.form_data(request['data'])
         # print "SERVER RECEVED CALL RETURN"
         # Send that call out to the node
-        recv_data = self.message(request["variables"]["name"], \
+        recv_message = self.message(request["variables"]["name"], \
             recv_data["call_return"], recv_data["to"], name="call_return")
         # If the service is being sent its own request then
-        if request["variables"]["name"] in recv_data["seen"] \
-            and request["variables"]["name"] == recv_data["to"]:
-            recv_data["seen"].remove(request["variables"]["name"])
-        # print recv_data["call_return"]
-        # print recv_data
-        self.add_message(recv_data)
+        if request["variables"]["name"] in recv_message["seen"] \
+            and request["variables"]["name"] == recv_message["to"]:
+            recv_message["seen"].remove(request["variables"]["name"])
+        if "return_key" in recv_data:
+            recv_message["return_key"] = recv_data["return_key"]
+        # print recv_message["call_return"]
+        # print recv_message
+        self.add_message(recv_message)
         # print hex(id(self.data))
         # print json.dumps(self.data, indent=4, sort_keys=True)
         # print "MESSAGES", recv_data["to"]
@@ -346,6 +351,23 @@ class server(SimpleHTTPSServer.handler):
         except (ValueError, KeyError):
             return False
 
+class call_result(object):
+    """
+    Shares a bool between processes
+    """
+    def __init__(self, initval=None):
+        self.initval = initval
+        self.value = initval
+
+    def __call__(self, *args, **kwargs):
+        return self.result(*args, **kwargs)
+
+    def result(self, value=None):
+        if value is not None:
+            self.value = value
+        while self.value is self.initval:
+            pass
+        return self.value
 
 class client(object):
     """docstring for client"""
@@ -362,6 +384,7 @@ class client(object):
         self.recv = False
         self.connect_fail = False
         self.crt = False
+        self.results = {}
 
     def log(self, message):
         print message
@@ -424,8 +447,9 @@ class client(object):
             if as_json:
                 data["call_return"] = json.loads(data["call_return"])
             # Call and send back result
-            print "GOT CALL RETURN"
-            print data["call_return"]
+            if "return_key" in data and data["return_key"] in self.results:
+                self.results[data["return_key"]](data["call_return"])
+                del self.results[data["return_key"]]
             # thread.start_new_thread(self.return_method, data["call_return"])
 
     def json(self, res):
@@ -554,17 +578,23 @@ class client(object):
         Calls a function on a node
         """
         url = "call/" + self.name
-        data = {
-            # So we know where the return value will go
-            "return_key": str(name),
+        call_args = {
             "name": name,
             "args": args,
             "kwargs": kwargs
         }
-        if type(data) != str and type(data) != unicode:
-            data = json.dumps(data)
-        res = self.post(url, {"call": data})
-        return self.return_status(res)
+        if type(call_args) != str and type(call_args) != unicode:
+            call_args = json.dumps(call_args)
+        data = {
+            "call": call_args,
+            # So we know where to return to
+            "return_key": str(uuid.uuid4())
+        }
+        result_aysc = call_result()
+        self.results[data["return_key"]] = result_aysc
+        res = self.post(url, data)
+        self.return_status(res)
+        return result_aysc
 
     def info(self, data):
         """
@@ -596,22 +626,6 @@ class client(object):
                     online[item] = connected[item]
         return online
 
-class shared_bool(object):
-    """
-    Shares a bool between processes
-    """
-    def __init__(self, initval=False):
-        self.val = multiprocessing.Value('i', initval)
-        self.lock = multiprocessing.Lock()
-
-    def __call__(self, value=None):
-        if value is not None:
-            with self.lock:
-                self.val.value = value
-        with self.lock:
-            value = self.val.value
-        return value
-
 class service(client):
     """
     Services connect to the stratus server
@@ -622,6 +636,7 @@ class service(client):
 
     def call_method(self, data):
         send_to = data["from"]
+        return_key = data["return_key"]
         call_data = data["call"]
         # print "CALLING METHOD"
         # print send_to, call_data
@@ -630,9 +645,9 @@ class service(client):
         found_method = getattr(self, call_data["name"])
         # Call the function
         res = found_method(*call_data["args"], **call_data["kwargs"])
-        return self.call_return(res, send_to)
+        return self.call_return(res, send_to, return_key)
 
-    def call_return(self, data, to):
+    def call_return(self, data, to, return_key):
         """
         Returns the result of a call back to caller
         """
@@ -641,7 +656,12 @@ class service(client):
         # print self.name, to, data
         if type(data) != str and type(data) != unicode:
             data = json.dumps(data)
-        res = self.post(url, {"to": to, "call_return": data})
+        res = {
+            "to": to,
+            "return_key": return_key,
+            "call_return": data
+        }
+        res = self.post(url, res)
         return self.return_status(res)
 
     def connect(self, *args, **kwargs):

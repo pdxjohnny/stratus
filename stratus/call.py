@@ -1,6 +1,7 @@
 import sys
 import time
 import uuid
+import datetime
 
 import stratus
 
@@ -8,6 +9,7 @@ __server_process__ = False
 __client_conn__ = []
 
 PROMPT = ":\r"
+NUM_CLIENTS = 10
 
 def print_recv(arg):
     print arg
@@ -20,8 +22,7 @@ class callme(stratus.service):
         self.myid = str(uuid.uuid4())[:4]
 
     def a_method(self, one, two, three=False):
-        return self.myid + " " + str(one) + " " + str(two) + " " + str(three)
-
+        return self.name + " " + str(one) + " " + str(two) + " " + str(three) + " " + str(datetime.datetime.now())
 
 def start():
     global __server_process__
@@ -39,13 +40,18 @@ def connect(**kwargs):
 
 def main():
     start()
+    # Let the server start
     time.sleep(0.2)
-    first = connect(name="John Andersen")
-    second = connect(name="Rylin Smith")
-    first.call("a_method", 5, 6, three=8)
-    first.call("a_method", 1, 2)
-    first.call("a_method", 9, 7, three=True)
-    first.call("a_method", "hello", "world")
+    # Create the clients
+    for i in xrange(0, NUM_CLIENTS):
+        connect(name="service_" + str(i))
+    res = []
+    # Call the methods
+    for i in xrange(0, NUM_CLIENTS):
+        for j in __client_conn__:
+            res.append(j.call("a_method", i, i+3, three=str(i)*4))
+    for i in res:
+        print i()
     while True:
         sys.stdout.write(PROMPT)
         data = sys.stdin.readline()
