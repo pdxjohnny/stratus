@@ -436,12 +436,6 @@ class client(object):
             if as_json:
                 data["data"] = json.loads(data["data"])
             thread.start_new_thread(self.recv, (data, ))
-        elif "call" in data:
-            as_json = self.json(data["call"])
-            if as_json:
-                data["call"] = json.loads(data["call"])
-            # Call and send back result
-            thread.start_new_thread(self.call_method, (data, ))
         elif "call_return" in data:
             as_json = self.json(data["call_return"])
             if as_json:
@@ -450,7 +444,6 @@ class client(object):
             if "return_key" in data and data["return_key"] in self.results:
                 self.results[data["return_key"]](data["call_return"])
                 del self.results[data["return_key"]]
-            # thread.start_new_thread(self.return_method, data["call_return"])
 
     def json(self, res):
         """
@@ -633,6 +626,15 @@ class service(client):
     """
     def __init__(self):
         super(service, self).__init__()
+
+    def call_recv(self, data, *args, **kwargs):
+        super(service, self).call_recv(data, *args, **kwargs)
+        if "call" in data:
+            as_json = self.json(data["call"])
+            if as_json:
+                data["call"] = json.loads(data["call"])
+            # Call and send back result
+            thread.start_new_thread(self.call_method, (data, ))
 
     def call_method(self, data):
         send_to = data["from"]
