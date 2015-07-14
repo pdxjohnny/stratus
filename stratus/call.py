@@ -14,7 +14,7 @@ NUM_CLIENTS = 10
 def print_recv(arg):
     print arg
 
-class callme(stratus.service):
+class callme(stratus.stratus):
     """docstring for callme"""
     def __init__(self):
         super(callme, self).__init__()

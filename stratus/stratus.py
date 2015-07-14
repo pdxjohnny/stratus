@@ -369,7 +369,7 @@ class call_result(object):
             pass
         return self.value
 
-class client(object):
+class client(server):
     """docstring for client"""
     def __init__(self):
         super(client, self).__init__()
@@ -386,7 +386,7 @@ class client(object):
         self.results = {}
 
     def log(self, message):
-        print message
+        del message
 
     def http_conncet(self):
         """
@@ -674,7 +674,7 @@ class service(client):
         self.info({"service": True})
 
 
-class stratus(server, service):
+class stratus(service):
     """
     Fault tollerent server and service
     Will connet to master and continue to chose

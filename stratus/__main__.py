@@ -54,7 +54,6 @@ def master(args):
     __server_process__.disconnect = print_disconnect
     __server_process__.start(**args)
     __server_process__.recv = getattr(sys.modules[__name__], args["recv"])
-    sys.stdout.write("Server listening\r\n")
     while True:
         sys.stdout.write(PROMPT)
         data = sys.stdin.readline()
