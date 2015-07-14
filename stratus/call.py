@@ -39,7 +39,6 @@ def connect(**kwargs):
     return client
 
 def main():
-    start()
     # Let the server start
     time.sleep(0.2)
     # Create the clients

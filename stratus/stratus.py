@@ -626,6 +626,8 @@ class service(client):
     Services connect to the stratus server
     and clients can call their methods
     """
+    def __init__(self):
+        super(service, self).__init__()
 
     def call_recv(self, data, *args, **kwargs):
         super(service, self).call_recv(data, *args, **kwargs)
@@ -682,6 +684,8 @@ class stratus(service):
     """
     def __init__(self):
         super(stratus, self).__init__()
+        self.args = []
+        self.kwargs = {}
         self.cluster = {}
         self.master = []
         self.onconnect = self.update_master
@@ -705,7 +709,7 @@ class stratus(service):
         self.log(self.master)
         if len(self.master) < 1 or self.master[0] == self.name:
             self.log("I am master")
-            self.name = "__stratus_master__"
+            # self.name = "__stratus_master__"
             self.kwargs["name"] = self.name
             super(stratus, self).start(*self.args, **self.kwargs)
             self.cluster[self.name] = self.kwargs
