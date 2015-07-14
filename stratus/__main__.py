@@ -110,7 +110,7 @@ def arg_setup():
     global ARG_PARSER
     ARG_PARSER = argparse.ArgumentParser(description=stratus.__description__)
     ARG_PARSER.add_argument("action", type=unicode, \
-        help="Start server or connect to server (start, connect)")
+        help="Start server or connect to server (start, connect, master)")
     ARG_PARSER.add_argument("--host", "-a", type=unicode, \
         help="Address of host server")
     ARG_PARSER.add_argument("--port", type=int, \

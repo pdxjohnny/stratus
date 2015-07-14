@@ -40,7 +40,6 @@ class server(SimpleHTTPSServer.handler):
     """docstring for handler"""
     def __init__(self):
         super(server, self).__init__()
-        # self.manager = multiprocessing.Manager()
         self.node_timeout(1, TIME_OUT)
         self.conns = {}
         # Clients that have datetime objects in them
@@ -49,9 +48,8 @@ class server(SimpleHTTPSServer.handler):
         self.clients = {}
         # For sending messages
         self.data = {}
-        # self.data = self.manager.dict()
         self.auth = False
-        self.connect = False
+        self.onconnect = False
         self.disconnect = False
         self.client_change = False
         # Loops through the array of callable nodes
@@ -226,8 +224,8 @@ class server(SimpleHTTPSServer.handler):
         # Create node
         if not node_name in self.clientsd:
             self.clientsd[node_name] = self.node(node_name, curr_time)
-            if self.connect:
-                self.connect(self.clientsd[node_name])
+            if self.onconnect:
+                self.onconnect(self.clientsd[node_name])
         # Update time
         elif update:
             self.clientsd[node_name]["last_update"] = curr_time
@@ -375,7 +373,6 @@ class client(object):
     """docstring for client"""
     def __init__(self):
         super(client, self).__init__()
-        self.manager = multiprocessing.Manager()
         self.host = "localhost"
         self.port = PORT
         self.ssl = False
@@ -629,8 +626,6 @@ class service(client):
     Services connect to the stratus server
     and clients can call their methods
     """
-    def __init__(self):
-        super(service, self).__init__()
 
     def call_recv(self, data, *args, **kwargs):
         super(service, self).call_recv(data, *args, **kwargs)
@@ -679,30 +674,50 @@ class service(client):
         self.info({"service": True})
 
 
-class stratus(server, client):
+class stratus(server, service):
     """
-    Fault tollerent server and client
+    Fault tollerent server and service
     Will connet to master and continue to chose
     next master if master goes down
     """
     def __init__(self):
         super(stratus, self).__init__()
+        self.cluster = {}
         self.master = []
-        self.connect = self.update_master
+        self.onconnect = self.update_master
         self.disconnect = self.update_master
         self.connect_fail = self.check_master
 
     def start(self, *args, **kwargs):
-        super(stratus, self).start(*args, **kwargs)
-        kwargs["name"] = "__stratus_master__"
-        super(stratus, self).connect(*args, **kwargs)
+        self.args = args
+        self.kwargs = kwargs
+        self.connect(*args, **kwargs)
 
-    def update_master(self, new_node):
-        self.master = [name for name in self.clientsd]
-        print self.master
+    def update_master(self, new_node, cluster=False):
+        if cluster:
+            self.cluster = cluster
+        else:
+            self.cluster = self.connected()
+        self.master = [name for name in self.cluster]
+
+    def check_master(self):
+        self.log("Choseing master")
+        self.log(self.master)
+        if len(self.master) < 1 or self.master[0] == self.name:
+            self.log("I am master")
+            self.name = "__stratus_master__"
+            self.kwargs["name"] = self.name
+            super(stratus, self).start(*self.args, **self.kwargs)
+            self.cluster[self.name] = self.kwargs
+            self.update_master(self.kwargs, self.cluster)
+        self.log("Connecting to new master")
+        self.log(self.master)
+        self.connect(**self.cluster[self.master[0]])
+        if len(self.master) > 0:
+            self.master.pop(0)
 
     def log(self, message):
-        # print message
+        del message
         return
 
 def print_recv(data):
