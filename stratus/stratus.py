@@ -306,7 +306,9 @@ class server(SimpleHTTPSServer.handler):
         output = json.dumps(send_data)
         headers = self.create_header()
         headers["Content-Type"] = "application/json"
+        # print "SENDING", len(send_data)
         self.send_to(to, self.end_response(headers, output) )
+        # print "SENT"
 
     def messages(self, to):
         new_messages = []
@@ -421,6 +423,7 @@ class client(object):
         """
         try:
             res = json.loads(res)
+            # print "RECIVED", len(res)
             if len(res) > 0 and hasattr(self.recv, '__call__'):
                 for item in xrange(0, len(res)):
                     data = res[item]
@@ -434,12 +437,14 @@ class client(object):
         if "data" in data:
             as_json = self.json(data["data"])
             if as_json:
-                data["data"] = json.loads(data["data"])
+                data["data"] = as_json
             thread.start_new_thread(self.recv, (data, ))
         elif "call_return" in data:
             as_json = self.json(data["call_return"])
             if as_json:
-                data["call_return"] = json.loads(data["call_return"])
+                data["call_return"] = as_json
+            if data["call_return"] == "false":
+                data["call_return"] = False
             # Call and send back result
             if "return_key" in data and data["return_key"] in self.results:
                 self.results[data["return_key"]](data["call_return"])
@@ -632,7 +637,7 @@ class service(client):
         if "call" in data:
             as_json = self.json(data["call"])
             if as_json:
-                data["call"] = json.loads(data["call"])
+                data["call"] = as_json
             # Call and send back result
             thread.start_new_thread(self.call_method, (data, ))
 
@@ -656,8 +661,10 @@ class service(client):
         url = "call_return/" + self.name
         # print "CLIENT SENDING CALL RETURN"
         # print self.name, to, data
-        if type(data) != str and type(data) != unicode:
+        try:
             data = json.dumps(data)
+        except:
+            pass
         res = {
             "to": to,
             "return_key": return_key,

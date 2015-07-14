@@ -51,7 +51,8 @@ def main():
         for j in __client_conn__:
             res.append(j.call("a_method", i, i+3, three=str(i)*4))
     for i in res:
-        print i()
+        i = i()
+        print i, type(i)
     while True:
         sys.stdout.write(PROMPT)
         data = sys.stdin.readline()
