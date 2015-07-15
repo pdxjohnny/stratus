@@ -23,7 +23,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.34"
+__version__ = "0.0.35"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -52,7 +52,7 @@ class server(SimpleHTTPSServer.handler):
         self.data = {}
         self.auth = False
         self.onconnect = False
-        self.disconnect = False
+        self.ondisconnect = False
         self.client_change = False
         # Loops through the array of callable nodes
         self.rotate_call = 0
@@ -63,6 +63,7 @@ class server(SimpleHTTPSServer.handler):
             ('post', '/call_return/:name', self.post_call_return, self.authenticate),
             ('get', '/ping/:name', self.get_ping, self.authenticate),
             ('get', '/connect/:name', self.get_connect, self.authenticate),
+            ('get', '/disconnect/:name', self.get_disconnect, self.authenticate),
             ('get', '/messages/:name', self.get_messages, self.authenticate),
             ('get', '/connected', self.get_connected, self.authenticate),
             ('get', '/:page', self.get_connected, self.authenticate)
@@ -175,6 +176,11 @@ class server(SimpleHTTPSServer.handler):
         # Get messages for sender
         return self.get_messages(request)
 
+    def get_disconnect(self, request):
+        self.node_status(request["variables"]["name"], disconnect=False)
+        # Get messages for sender
+        return self.get_messages(request)
+
     def get_messages(self, request):
         # Get messages for sender
         send_data = self.messages(request["variables"]["name"])
@@ -190,23 +196,8 @@ class server(SimpleHTTPSServer.handler):
         return self.end_response(headers, output)
 
     def start(self, host="0.0.0.0", port=PORT, key=False, crt=False, threading=True, **kwargs):
-        self.log("Starting on {}:{}".format(host, port))
         thread.start_new_thread(self.update_status, ())
-        server_process = SimpleHTTPSServer.server((host, port), self, \
-            bind_and_activate=False, threading=True, \
-            key=key, crt=crt)
-        if threading:
-            # self.process = multiprocessing.Process(target=server_process.serve_forever)
-            # self.process.start()
-            # return self.process
-            thread.start_new_thread(server_process.serve_forever, ())
-        else:
-            server_process.serve_forever()
-
-    def stop(self):
-        if self.process:
-            return self.process.terminate()
-        return False
+        return super(server, self).start(host, port, key, crt, threading, **kwargs)
 
     def call_node(self, service_type=True):
         res = False
@@ -237,10 +228,10 @@ class server(SimpleHTTPSServer.handler):
                 pass
 
     def node_status(self, node_name, update=False, conn=False, \
-        info=False, ip=False):
+        info=False, ip=False, disconnect=False):
         curr_time = datetime.datetime.now()
         # Create node
-        if not node_name in self.clientsd:
+        if not node_name in self.clientsd and not disconnect:
             self.clientsd[node_name] = self.node(node_name, curr_time)
             if self.onconnect:
                 self.onconnect(self.clientsd[node_name])
@@ -258,11 +249,11 @@ class server(SimpleHTTPSServer.handler):
             self.clientsd[node_name]["ip"] = ip.getpeername()[0]
         # Offline
         else:
-            if curr_time - self.timeout > \
+            if disconnect or curr_time - self.timeout > \
                 self.clientsd[node_name]["last_update"]:
                 self.clientsd[node_name]["online"] = False
-                if self.disconnect:
-                    self.disconnect(self.clientsd[node_name])
+                if self.ondisconnect:
+                    self.ondisconnect(self.clientsd[node_name])
                 del self.clientsd[node_name]
                 if node_name in self.conns:
                     del self.conns[node_name]
@@ -552,7 +543,8 @@ class client(server):
         """
         Continues to ping
         """
-        while True:
+        self.running = True
+        while self.running:
             self.ping()
             time.sleep(self.update)
         return 0
@@ -579,6 +571,15 @@ class client(server):
         """
         url = "ping/" + self.name
         res = self.get(url, self.ping_conn)
+        return self.return_status(res)
+
+    def disconnect(self):
+        """
+        Tells the server we are disconnecting
+        """
+        url = "disconnect/" + self.name
+        self.running = False
+        res = self.get(url, self.send_conn)
         return self.return_status(res)
 
     def send(self, data, to=ALL_CLIENTS):
@@ -725,13 +726,20 @@ class stratus(service):
         self.cluster = {}
         self.master = []
         self.onconnect = self.update_master
-        self.disconnect = self.update_master
+        self.ondisconnect = self.update_master
         self.connect_fail = self.check_master
 
     def start(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
         self.connect(*args, **kwargs)
+
+    def stop(self):
+        super(stratus, self).disconnect()
+        return super(stratus, self).stop()
+
+    def disconnect(self):
+        return self.stop()
 
     def update_master(self, new_node, cluster=False):
         if cluster:

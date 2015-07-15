@@ -42,9 +42,9 @@ def upload():
 	command = "python setup.py sdist upload -r pypi"
 	os.system(command)
 	if os.name != "nt":
-		command = "sudo -HE pip install --upgrade %s" % (NAME, )
+		command = "sudo -HE pip install --no-cache-dir --upgrade %s" % (NAME, )
 	else:
-		command = "python -m pip install --upgrade %s" % (NAME, )
+		command = "python -m pip install --no-cache-dir --upgrade %s" % (NAME, )
 	os.system(command)
 
 def main():
