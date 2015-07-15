@@ -23,7 +23,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.30"
+__version__ = "0.0.31"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -120,8 +120,8 @@ class server(SimpleHTTPSServer.handler):
                 recv_message["seen"].remove(request["variables"]["name"])
             if "return_key" in recv_data:
                 recv_message["return_key"] = recv_data["return_key"]
-            # print "ADDING MESSAGE"
-            # print recv_message
+            self.log("ADDING MESSAGE")
+            self.log(recv_message)
             self.add_message(recv_message)
             thread.start_new_thread(self.send_messages, (call_node, ))
         # Get messages for sender
@@ -147,8 +147,8 @@ class server(SimpleHTTPSServer.handler):
         # print recv_message
         self.add_message(recv_message)
         # print hex(id(self.data))
-        # print json.dumps(self.data, indent=4, sort_keys=True)
-        # print "MESSAGES", recv_data["to"]
+        self.log("MESSAGES" + recv_data["to"])
+        self.log(json.dumps(self.data[recv_data["to"]], indent=4, sort_keys=True))
         # print json.dumps(self.messages(recv_data["to"]), indent=4, sort_keys=True)
         thread.start_new_thread(self.send_messages, (recv_data["to"], ))
         # Get messages for sender
@@ -213,15 +213,17 @@ class server(SimpleHTTPSServer.handler):
         services = [name for name in self.clientsd \
             if "service" in self.clientsd[name] \
             and self.clientsd[name]["service"] == service_type]
-        # print "DETRIMINING NODE TO CALL"
-        # print service_type
-        # print self.rotate_call, services
+        self.log("DETRIMINING NODE TO CALL")
+        self.log(service_type)
+        self.log(self.rotate_call)
+        self.log(services)
         self.rotate_call += 1
         # Set back to zero once we have called on all nodes
         if self.rotate_call >= len(services):
             self.rotate_call = 0
         if len(services) > 0:
             res = services[self.rotate_call]
+        self.log(res)
         return res
 
     def update_status(self):
@@ -300,8 +302,10 @@ class server(SimpleHTTPSServer.handler):
     def send_to(self, node_name, data):
         if node_name in self.conns:
             try:
+                self.log("SENDING " + str(len(data)) + " TO " + node_name)
                 return self.conns[node_name].sendall(data)
             except:
+                self.log("SENT FAILED " + node_name)
                 del self.conns[node_name]
         return False
 
@@ -320,7 +324,6 @@ class server(SimpleHTTPSServer.handler):
         output = json.dumps(send_data)
         headers = self.create_header()
         headers["Content-Type"] = "application/json"
-        # print "SENDING", len(send_data)
         self.send_to(to, self.end_response(headers, output) )
         # print "SENT"
 
@@ -434,8 +437,7 @@ class client(server):
         """
         try:
             res = json.loads(res)
-            # print "RECIVED", len(res)
-            if len(res) > 0 and hasattr(self.recv, '__call__'):
+            if len(res) > 0:
                 for item in xrange(0, len(res)):
                     data = res[item]
                     data["__name__"] = self.name
@@ -445,7 +447,7 @@ class client(server):
             return False
 
     def call_recv(self, data):
-        if "data" in data:
+        if "data" in data and hasattr(self.recv, '__call__'):
             as_json = self.json(data["data"])
             if as_json:
                 data["data"] = as_json
@@ -566,6 +568,7 @@ class client(server):
         while True:
             res = self.recv_conn.recv()
             if len(res):
+                self.log("RECEVED " + res)
                 thread.start_new_thread(self.return_status, (res, ))
 
     def ping(self):
@@ -654,6 +657,8 @@ class service(client):
 
     def call_recv(self, data, *args, **kwargs):
         super(service, self).call_recv(data, *args, **kwargs)
+        self.log("CALL RECV")
+        self.log(data)
         if "call" in data:
             as_json = self.json(data["call"])
             if as_json:
