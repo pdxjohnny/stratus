@@ -23,7 +23,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.35"
+__version__ = "0.0.36"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -177,7 +177,7 @@ class server(SimpleHTTPSServer.handler):
         return self.get_messages(request)
 
     def get_disconnect(self, request):
-        self.node_status(request["variables"]["name"], disconnect=False)
+        self.node_status(request["variables"]["name"], disconnect=True)
         # Get messages for sender
         return self.get_messages(request)
 
