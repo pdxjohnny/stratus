@@ -60,7 +60,8 @@ def master(args):
         if len(data) > 1:
             data = data[:-1]
             if data == "exit":
-                return 0
+                __server_process__.stop()
+                sys.exit(0)
             if data.startswith("info"):
                 data = data[5:]
                 __server_process__.info(data)
@@ -98,7 +99,7 @@ def connect(args):
         if len(data) > 1:
             data = data[:-1]
             if data == "exit":
-                return 0
+                sys.exit(0)
             if data.startswith("info"):
                 data = data[5:]
                 __client_conn__.info(data)

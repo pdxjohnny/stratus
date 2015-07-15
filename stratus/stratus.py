@@ -23,7 +23,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.29"
+__version__ = "0.0.30"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -41,6 +41,8 @@ class server(SimpleHTTPSServer.handler):
     def __init__(self):
         super(server, self).__init__()
         self.node_timeout(1, TIME_OUT)
+        # Server process
+        self.process = False
         self.conns = {}
         # Clients that have datetime objects in them
         self.clientsd = {}
@@ -187,12 +189,24 @@ class server(SimpleHTTPSServer.handler):
         headers["Content-Type"] = "application/json"
         return self.end_response(headers, output)
 
-    def start(self, host="0.0.0.0", port=PORT, key=False, crt=False, **kwargs):
+    def start(self, host="0.0.0.0", port=PORT, key=False, crt=False, threading=True, **kwargs):
+        self.log("Starting on {}:{}".format(host, port))
         thread.start_new_thread(self.update_status, ())
         server_process = SimpleHTTPSServer.server((host, port), self, \
             bind_and_activate=False, threading=True, \
             key=key, crt=crt)
-        return thread.start_new_thread(server_process.serve_forever, ())
+        if threading:
+            # self.process = multiprocessing.Process(target=server_process.serve_forever)
+            # self.process.start()
+            # return self.process
+            thread.start_new_thread(server_process.serve_forever, ())
+        else:
+            server_process.serve_forever()
+
+    def stop(self):
+        if self.process:
+            return self.process.terminate()
+        return False
 
     def call_node(self, service_type=True):
         res = False
@@ -387,8 +401,6 @@ class client(server):
         self.crt = False
         self.results = {}
 
-    def log(self, message):
-        del message
 
     def http_conncet(self):
         """
@@ -513,10 +525,13 @@ class client(server):
 
     def connect(self, host="localhost", port=PORT, ssl=False, \
         name=socket.gethostname(), update=TIME_OUT, crt=False, \
-        username=False, password=False, **kwargs):
+        username=False, password=False, ip=False, **kwargs):
         """
         Starts main
         """
+        # Connect to ip if specified
+        if ip:
+            host = ip
         self.host = host
         self.port = port
         self.ssl = ssl
@@ -525,6 +540,7 @@ class client(server):
         self.password = password
         self.update = update
         self.crt = crt
+        self.log("Connecting to {}:{}".format(self.host, self.port))
         self.http_conncet()
         return thread.start_new_thread(self.main, ())
 
@@ -727,15 +743,15 @@ class stratus(service):
             super(stratus, self).start(*self.args, **self.kwargs)
             self.cluster[self.name] = self.kwargs
             self.update_master(self.kwargs, self.cluster)
+        # Give the new server time to bind
+        time.sleep(0.1)
+        # Connect to the new master
         self.log("Connecting to new master")
-        self.log(self.master)
+        self.log(self.cluster[self.master[0]])
         self.connect(**self.cluster[self.master[0]])
         if len(self.master) > 0:
             self.master.pop(0)
 
-    def log(self, message):
-        del message
-        return
 
 def print_recv(data):
     print(data)
@@ -750,12 +766,12 @@ def main():
     stratus_server = server()
     stratus_server.start(port=port)
 
-    stratus_client_one = client(name="one")
-    stratus_client_two = client(name="two")
+    stratus_client_one = client()
+    stratus_client_two = client()
     stratus_client_one.recv = print_recv
     stratus_client_two.recv = print_recv
-    stratus_client_one.connect()
-    stratus_client_two.connect()
+    stratus_client_one.connect(name="one")
+    stratus_client_two.connect(name="two")
 
     while True:
         data = raw_input("Send data: ")
