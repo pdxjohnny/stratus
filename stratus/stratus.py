@@ -23,7 +23,7 @@ import SimpleHTTPSServer
 
 import sockhttp
 
-__version__ = "0.0.33"
+__version__ = "0.0.34"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
@@ -343,8 +343,8 @@ class server(SimpleHTTPSServer.handler):
                         new_messages.append(append)
                 for item in xrange(0, len(self.data[name])):
                     try:
+                        # If all clients have seen or the one its to has seen
                         if len(self.data[name]) and \
-                            # If all clients have seen or the one its to has seen
                             (len(self.data[name][item]["seen"]) >= len(self.clientsd) or \
                                 self.data[name][item]["to"] in self.data[name][item]["seen"]):
                             del self.data[name][item]
