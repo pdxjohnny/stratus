@@ -35,7 +35,7 @@ class conn(object):
                 return res[1:]
 
     def _recv( self, sock ):
-        data = sock.recv(4048).strip()
+        data = sock.recv(4048)
         # Check of a Content-Length, if there is one
         # then data is being uploaded
         content_length = False
@@ -82,6 +82,7 @@ class conn(object):
 
     def _recvall( self, sock, n, end_on = False ):
         data = ''
+        n += 1
         while len(data) < n:
             if end_on and data[ -len(end_on): ] == end_on:
                 break
