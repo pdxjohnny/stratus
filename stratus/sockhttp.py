@@ -42,6 +42,7 @@ class conn(object):
         for line in data.split('\n'):
             if 'Content-Length' in line:
                 content_length = int(line.split(' ')[-1])
+                break
         # If theres a Content-Length he now there is
         # a body that is seperated from the headers
         if content_length:
