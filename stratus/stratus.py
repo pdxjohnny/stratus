@@ -442,7 +442,6 @@ class client(server):
         self.crt = False
         self.results = {}
 
-
     def http_conncet(self):
         """
         Connects to the server with tcp http connections.
@@ -474,6 +473,7 @@ class client(server):
         Returns True if there was a json to pass to recv.
         """
         try:
+            self.log("RECEVED " + res)
             res = json.loads(res)
             if len(res) > 0:
                 for item in xrange(0, len(res)):
@@ -528,19 +528,23 @@ class client(server):
         else:
             raise
 
-    def get(self, url, http_conn):
+    def get(self, url, http_conn, reconnect=True):
         """
         Requests the page and returns data
         """
         res = ""
         try:
-            url = urllib.quote(url, safe='')
+            if reconnect:
+                url = urllib.quote(url, safe='')
             http_conn.request("GET", "/" + url, headers=self.headers)
             res = http_conn.getresponse()
             res = res.read()
-        except (httplib.BadStatusLine, httplib.CannotSendRequest), error:
-            self.log("Reconecting")
-            self.http_conncet()
+        except (httplib.BadStatusLine, httplib.CannotSendRequest) as error:
+            if reconnect:
+                self.log("Reconecting")
+                self.http_conncet()
+                self.get(url, http_conn, reconnect=False)
+                self.info(self.store_info, store=False)
         except socket.error as error:
             self._connection_failed(error)
         return res
@@ -587,6 +591,8 @@ class client(server):
         self.password = password
         self.update = update
         self.crt = crt
+        # So that info can be sent to the server on reconnect
+        self.store_info = {}
         self.log("Connecting to {}:{}".format(self.host, self.port))
         self.http_conncet()
         return thread.start_new_thread(self.main, ())
@@ -614,7 +620,6 @@ class client(server):
         while True:
             res = self.recv_conn.recv()
             if len(res):
-                self.log("RECEVED " + res)
                 thread.start_new_thread(self.return_status, (res, ))
 
     def ping(self):
@@ -671,12 +676,14 @@ class client(server):
         self.return_status(res)
         return result_aysc
 
-    def info(self, data):
+    def info(self, data, store=True):
         """
         Queues data for sending
         """
         url = "info/" + self.name
-        if type(data) != str and type(data) != unicode:
+        if isinstance(data, dict) or isinstance(data, list):
+            if store:
+                self.store_info.update(data)
             data = json.dumps(data)
         res = self.post(url, {"info": data})
         return self.return_status(res)
@@ -806,7 +813,7 @@ class stratus(service):
     def start(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
-        self.connect(*args, **kwargs)
+        self.connect(*self.args, **self.kwargs)
 
     def stop(self):
         super(stratus, self).disconnect()
@@ -823,6 +830,7 @@ class stratus(service):
         self.master = [name for name in self.cluster]
 
     def check_master(self):
+        self.running = False
         self.log("Choseing master")
         self.log(self.master)
         if len(self.master) < 1 or self.master[0] == self.name:
