@@ -447,17 +447,17 @@ class client(server):
         """
         Connects to the server with tcp http connections.
         """
+        self.log("http_conncet")
         self.headers = {"Connection": "keep-alive"}
         if self.username and self.password:
             encoded = base64.b64encode(self.username + ':' + self.password)
             self.headers["Authorization"] = "Basic " + encoded
         try:
+            self.recv_connect(recv_listen=recv_listen)
             self.ping_conn = self.httplib_conn()
             self.send_conn = self.httplib_conn()
-            self.recv_conn = sockhttp.conn(self.host, self.port, \
-                headers=self.headers, ssl=self.ssl, crt=self.crt)
-            self.recv_connect(recv_listen)
         except socket.error as error:
+            self.log("http_conncet, failed")
             self._connection_failed(error)
         return True
 
@@ -615,6 +615,8 @@ class client(server):
         """
         Connects a socket that the server can push to.
         """
+        self.recv_conn = sockhttp.conn(self.host, self.port, \
+            headers=self.headers, ssl=self.ssl, crt=self.crt)
         url = "/connect/" + self.name
         res = self.recv_conn.get(url)
         res = self.return_status(res)
@@ -632,11 +634,9 @@ class client(server):
             except errors.RecvDisconnected as error:
                 self.log("RecvDisconnected, Reconecting")
                 time.sleep(BIND_TIME)
-                self.recv_conn = sockhttp.conn(self.host, self.port, \
-                    headers=self.headers, ssl=self.ssl, crt=self.crt)
-                url = "/connect/" + self.name
-                res = self.recv_conn.get(url)
-                res = self.return_status(res)
+                # self.log("Reconecting")
+                self.http_conncet(recv_listen=False)
+                # self.recv_connect(recv_listen=False)
 
     def ping(self):
         """
@@ -756,10 +756,8 @@ class service(client):
             res = found_method(*call_data["args"], **call_data["kwargs"])
             return self.call_return(res, send_to, return_key)
         except Exception as error:
-            print str(error)
             stack_track = str(error) + DOUBLE_LINE_BREAK + traceback.format_exc()
             return self.call_failed(stack_track, send_to, return_key)
-            # return self.call_failed(str(error), send_to, return_key)
 
     def call_return(self, data, to, return_key):
         """
