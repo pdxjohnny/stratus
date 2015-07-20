@@ -331,7 +331,8 @@ class server(SimpleHTTPSServer.handler):
         if node_name in self.conns:
             try:
                 self.log("SENDING " + str(len(data)) + " TO " + node_name)
-                return self.conns[node_name].sendall(data)
+                self.conns[node_name].sendall(data)
+                return True
             except:
                 self.log("SENT FAILED " + node_name)
                 del self.conns[node_name]
@@ -352,7 +353,12 @@ class server(SimpleHTTPSServer.handler):
         output = json.dumps(send_data)
         headers = self.create_header()
         headers["Content-Type"] = "application/json"
-        self.send_to(to, self.end_response(headers, output) )
+        success = self.send_to(to, self.end_response(headers, output) )
+        # Client did not get message wait for reconnect or ping
+        if not success:
+            for message in send_data:
+                message["seen"] = []
+                self.add_message(message)
         # print "SENT"
 
     def messages(self, to):
