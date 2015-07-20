@@ -96,10 +96,9 @@ class server(SimpleHTTPSServer.handler):
             ip=request["socket"])
         # Add message to be sent out
         recv_data = self.form_data(request['data'])
-        recv_data = self.message(request["variables"]["name"], \
-            recv_data["data"], recv_data["to"])
-        self.add_message(recv_data)
-        thread.start_new_thread(self.send_messages, (recv_data["to"], ))
+        recv_message = self.message(request["variables"]["name"], recv_data)
+        self.add_message(recv_message)
+        thread.start_new_thread(self.send_messages, (recv_message["to"], ))
         # Get messages for sender
         return self.get_messages(request)
 
@@ -115,12 +114,15 @@ class server(SimpleHTTPSServer.handler):
         # If there are service nodes to call
         if call_node:
             # Send that call out to the node
-            recv_message = self.message(request["variables"]["name"], \
-                recv_data["call"], call_node, name="call")
+            recv_data["to"] = call_node
+            recv_message = self.message(request["variables"]["name"], recv_data)
         else:
-            no_service = "No service named \"{}\" in cluster".format(service_name)
-            recv_message = self.message("__stratus__", \
-                no_service, request["variables"]["name"], name="call/failed")
+            no_service = "No service named \"{}\"".format(service_name)
+            new_message = {
+                "to": request["variables"]["name"],
+                "call/failed": no_service,
+            }
+            recv_message = self.message("__stratus__", new_message)
         # If the service is being sent its own request then
         if request["variables"]["name"] in recv_message["seen"] \
             and request["variables"]["name"] == recv_message["to"]:
@@ -146,8 +148,7 @@ class server(SimpleHTTPSServer.handler):
         recv_data = self.form_data(request['data'])
         self.log("SERVER RECEVED CALL RETURN")
         # Send that call out to the node
-        recv_message = self.message(request["variables"]["name"], \
-            recv_data["call/return"], recv_data["to"], name="call/return")
+        recv_message = self.message(request["variables"]["name"], recv_data)
         # If the service is being sent its own request then
         if request["variables"]["name"] in recv_message["seen"] \
             and request["variables"]["name"] == recv_message["to"]:
@@ -168,8 +169,7 @@ class server(SimpleHTTPSServer.handler):
         # Add message to be sent out
         recv_data = self.form_data(request['data'])
         # Send that call out to the node
-        recv_message = self.message(request["variables"]["name"], \
-            recv_data["call/failed"], recv_data["to"], name="call/failed")
+        recv_message = self.message(request["variables"]["name"], recv_data)
         # If the service is being sent its own request then
         if request["variables"]["name"] in recv_message["seen"] \
             and request["variables"]["name"] == recv_message["to"]:
@@ -305,13 +305,21 @@ class server(SimpleHTTPSServer.handler):
             "online": True
         }
 
-    def message(self, sent_by, data, to=ALL_CLIENTS, name="data"):
-        return {
-            "to": to,
-            "from": sent_by,
-            name: data,
-            "seen": [sent_by]
-        }
+    def message(self, sent_by, data):
+        # print data
+        # Copy data and add to it
+        new_message = copy.deepcopy(data)
+        # Create a list of clients that have seen the message
+        new_message["seen"] = [sent_by]
+        # To defaults to sending to ALL_CLIENTS
+        if not "to" in new_message:
+            new_message["to"] = ALL_CLIENTS
+        # If the message is being set to itself then don't add it to seen list
+        if sent_by == new_message["to"]:
+            new_message["seen"].remove(sent_by)
+        # Add the sender to the message
+        new_message["from"] = sent_by
+        return new_message
 
     def add_message(self, add):
         if not add["to"] in self.data:
@@ -634,9 +642,7 @@ class client(server):
             except errors.RecvDisconnected as error:
                 self.log("RecvDisconnected, Reconecting")
                 time.sleep(BIND_TIME)
-                # self.log("Reconecting")
                 self.http_conncet(recv_listen=False)
-                # self.recv_connect(recv_listen=False)
 
     def ping(self):
         """
