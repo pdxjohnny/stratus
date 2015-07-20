@@ -2,6 +2,8 @@ import urllib
 import ssl as ssllib
 import socket
 
+import errors
+
 class conn(object):
     """docstring for conn"""
     def __init__(self, host, port, headers={}, ssl=False, crt=None):
@@ -36,6 +38,8 @@ class conn(object):
 
     def _recv( self, sock ):
         data = sock.recv(4048)
+        if len(data) == 0:
+            raise errors.RecvDisconnected()
         # Check of a Content-Length, if there is one
         # then data is being uploaded
         content_length = False

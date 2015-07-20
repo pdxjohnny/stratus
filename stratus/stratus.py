@@ -34,6 +34,7 @@ __logo__ = """
 """
 PORT = 5678
 TIME_OUT = 20
+BIND_TIME = 0.1
 ALL_CLIENTS = "__all__"
 CONNECTION_REFUSED = "Connection Refused"
 
@@ -107,8 +108,6 @@ class server(SimpleHTTPSServer.handler):
             ip=request["socket"])
         # Add message to be sent out
         recv_data = self.form_data(request['data'])
-        # print "SERVER RECEVED CALL"
-        # print recv_data["call"]
         service_name = recv_data.get("service", True)
         # Distribute the load
         call_node = self.call_node(service_name)
@@ -154,13 +153,9 @@ class server(SimpleHTTPSServer.handler):
             recv_message["seen"].remove(request["variables"]["name"])
         if "return_key" in recv_data:
             recv_message["return_key"] = recv_data["return_key"]
-        # print recv_message["call/return"]
-        # print recv_message
         self.add_message(recv_message)
-        # print hex(id(self.data))
         self.log("MESSAGES" + recv_data["to"])
         self.log(json.dumps(self.data[recv_data["to"]], indent=4, sort_keys=True))
-        # print json.dumps(self.messages(recv_data["to"]), indent=4, sort_keys=True)
         thread.start_new_thread(self.send_messages, (recv_data["to"], ))
         # Get messages for sender
         return self.get_messages(request)
@@ -171,7 +166,6 @@ class server(SimpleHTTPSServer.handler):
             ip=request["socket"])
         # Add message to be sent out
         recv_data = self.form_data(request['data'])
-        # print "SERVER RECEVED CALL RETURN"
         # Send that call out to the node
         recv_message = self.message(request["variables"]["name"], \
             recv_data["call/failed"], recv_data["to"], name="call/failed")
@@ -181,13 +175,9 @@ class server(SimpleHTTPSServer.handler):
             recv_message["seen"].remove(request["variables"]["name"])
         if "return_key" in recv_data:
             recv_message["return_key"] = recv_data["return_key"]
-        # print recv_message["call/failed"]
-        # print recv_message
         self.add_message(recv_message)
-        # print hex(id(self.data))
         self.log("MESSAGES" + recv_data["to"])
         self.log(json.dumps(self.data[recv_data["to"]], indent=4, sort_keys=True))
-        # print json.dumps(self.messages(recv_data["to"]), indent=4, sort_keys=True)
         thread.start_new_thread(self.send_messages, (recv_data["to"], ))
         # Get messages for sender
         return self.get_messages(request)
@@ -359,7 +349,6 @@ class server(SimpleHTTPSServer.handler):
             for message in send_data:
                 message["seen"] = []
                 self.add_message(message)
-        # print "SENT"
 
     def messages(self, to):
         new_messages = []
@@ -448,7 +437,7 @@ class client(server):
         self.crt = False
         self.results = {}
 
-    def http_conncet(self):
+    def http_conncet(self, recv_listen=True):
         """
         Connects to the server with tcp http connections.
         """
@@ -461,7 +450,7 @@ class client(server):
             self.send_conn = self.httplib_conn()
             self.recv_conn = sockhttp.conn(self.host, self.port, \
                 headers=self.headers, ssl=self.ssl, crt=self.crt)
-            self.recv_connect()
+            self.recv_connect(recv_listen)
         except socket.error as error:
             self._connection_failed(error)
         return True
@@ -479,7 +468,7 @@ class client(server):
         Returns True if there was a json to pass to recv.
         """
         try:
-            self.log("RECEVED " + res)
+            self.log("RECEVED " + str(res))
             res = json.loads(res)
             if len(res) > 0:
                 for item in xrange(0, len(res)):
@@ -548,7 +537,7 @@ class client(server):
         except (httplib.BadStatusLine, httplib.CannotSendRequest) as error:
             if reconnect:
                 self.log("Reconecting")
-                self.http_conncet()
+                self.http_conncet(recv_listen=False)
                 self.get(url, http_conn, reconnect=False)
                 self.info(self.store_info, store=False)
         except socket.error as error:
@@ -574,15 +563,16 @@ class client(server):
         except (httplib.BadStatusLine, httplib.CannotSendRequest), error:
             if reconnect:
                 self.log("Reconecting")
-                self.http_conncet()
+                self.http_conncet(recv_listen=False)
                 self.post(url, data, reconnect=False)
         except socket.error as error:
             self._connection_failed(error)
+            return False
         return res
 
     def connect(self, host="localhost", port=PORT, ssl=False, \
         name=socket.gethostname(), update=TIME_OUT, crt=False, \
-        username=False, password=False, ip=False, **kwargs):
+        username=False, password=False, ip=False, start_main=True, **kwargs):
         """
         Starts main
         """
@@ -601,7 +591,9 @@ class client(server):
         self.store_info = {}
         self.log("Connecting to {}:{}".format(self.host, self.port))
         self.http_conncet()
-        return thread.start_new_thread(self.main, ())
+        if start_main:
+            return thread.start_new_thread(self.main, ())
+        return True
 
     def main(self):
         """
@@ -613,20 +605,32 @@ class client(server):
             time.sleep(self.update)
         return 0
 
-    def recv_connect(self):
+    def recv_connect(self, recv_listen=True):
         """
         Connects a socket that the server can push to.
         """
         url = "/connect/" + self.name
         res = self.recv_conn.get(url)
-        self.return_status(res)
-        thread.start_new_thread(self.listen, () )
+        res = self.return_status(res)
+        if recv_listen:
+            thread.start_new_thread(self.listen, () )
+        return res
 
     def listen(self):
-        while True:
-            res = self.recv_conn.recv()
-            if len(res):
-                thread.start_new_thread(self.return_status, (res, ))
+        self.running = True
+        while self.running:
+            try:
+                res = self.recv_conn.recv()
+                if len(res):
+                    thread.start_new_thread(self.return_status, (res, ))
+            except errors.RecvDisconnected as error:
+                self.log("RecvDisconnected, Reconecting")
+                time.sleep(BIND_TIME)
+                self.recv_conn = sockhttp.conn(self.host, self.port, \
+                    headers=self.headers, ssl=self.ssl, crt=self.crt)
+                url = "/connect/" + self.name
+                res = self.recv_conn.get(url)
+                res = self.return_status(res)
 
     def ping(self):
         """
@@ -738,8 +742,6 @@ class service(client):
         send_to = data["from"]
         return_key = data["return_key"]
         call_data = data["call"]
-        # print "CALLING METHOD"
-        # print send_to, call_data
         res = False
         try:
             # Get the function
@@ -812,8 +814,6 @@ class stratus(service):
         self.kwargs = {}
         self.cluster = {}
         self.master = []
-        self.onconnect = self.update_master
-        self.ondisconnect = self.update_master
         self.connect_fail = self.check_master
 
     def start(self, *args, **kwargs):
@@ -828,12 +828,11 @@ class stratus(service):
     def disconnect(self):
         return self.stop()
 
-    def update_master(self, new_node, cluster=False):
-        if cluster:
-            self.cluster = cluster
-        else:
-            self.cluster = self.connected()
-        self.master = [name for name in self.cluster]
+    def ping(self, *args, **kwargs):
+        super(stratus, self).ping(*args, **kwargs)
+        self.cluster = self.connected()
+        if self.cluster:
+            self.master = [name for name in self.cluster]
 
     def check_master(self):
         self.running = False
@@ -841,17 +840,19 @@ class stratus(service):
         self.log(self.master)
         if len(self.master) < 1 or self.master[0] == self.name:
             self.log("I am master")
-            # self.name = "__stratus_master__"
             self.kwargs["name"] = self.name
             super(stratus, self).start(*self.args, **self.kwargs)
             self.cluster[self.name] = self.kwargs
-            self.update_master(self.kwargs, self.cluster)
+            self.master = [name for name in self.cluster]
         # Give the new server time to bind
-        time.sleep(0.1)
+        time.sleep(BIND_TIME)
         # Connect to the new master
         self.log("Connecting to new master")
-        self.log(self.cluster[self.master[0]])
-        self.connect(**self.cluster[self.master[0]])
+        new_master = self.cluster[self.master[0]]
+        # Don't take the new masters name
+        new_master["name"] = self.name
+        self.log(new_master)
+        self.connect(start_main=False, **new_master)
         if len(self.master) > 0:
             self.master.pop(0)
 
