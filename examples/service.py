@@ -3,7 +3,7 @@ import uuid
 import time
 import stratus
 
-NUM_SERVICES = 5
+NUM_SERVICES = 1
 SERVICE_NAME = "db"
 
 class service(stratus.stratus):

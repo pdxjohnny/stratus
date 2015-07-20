@@ -21,6 +21,7 @@ import mimetypes
 import multiprocessing
 import SimpleHTTPSServer
 
+import errors
 import sockhttp
 
 __version__ = "0.0.38"
@@ -59,8 +60,9 @@ class server(SimpleHTTPSServer.handler):
         self.actions = [
             ('post', '/info/:name', self.post_info, self.authenticate),
             ('post', '/ping/:name', self.post_ping, self.authenticate),
+            ('post', '/call/return/:name', self.post_call_return, self.authenticate),
+            ('post', '/call/failed/:name', self.post_call_failed, self.authenticate),
             ('post', '/call/:name', self.post_call, self.authenticate),
-            ('post', '/call_return/:name', self.post_call_return, self.authenticate),
             ('get', '/ping/:name', self.get_ping, self.authenticate),
             ('get', '/connect/:name', self.get_connect, self.authenticate),
             ('get', '/disconnect/:name', self.get_disconnect, self.authenticate),
@@ -115,15 +117,23 @@ class server(SimpleHTTPSServer.handler):
             # Send that call out to the node
             recv_message = self.message(request["variables"]["name"], \
                 recv_data["call"], call_node, name="call")
-            # If the service is being sent its own request then
-            if request["variables"]["name"] in recv_message["seen"] \
-                and request["variables"]["name"] == recv_message["to"]:
-                recv_message["seen"].remove(request["variables"]["name"])
-            if "return_key" in recv_data:
-                recv_message["return_key"] = recv_data["return_key"]
-            self.log("ADDING MESSAGE")
-            self.log(recv_message)
-            self.add_message(recv_message)
+        else:
+            no_service = "No service named \"{}\" in cluster".format(service_name)
+            recv_message = self.message("__stratus__", \
+                no_service, request["variables"]["name"], name="call/failed")
+        # If the service is being sent its own request then
+        if request["variables"]["name"] in recv_message["seen"] \
+            and request["variables"]["name"] == recv_message["to"]:
+            recv_message["seen"].remove(request["variables"]["name"])
+        # Attach the return key to the message
+        if "return_key" in recv_data:
+            recv_message["return_key"] = recv_data["return_key"]
+        # Add the message to be set out
+        self.log("ADDING CALL MESSAGE")
+        self.log(recv_message)
+        self.add_message(recv_message)
+        # If there is a node to call send it the call request
+        if call_node:
             thread.start_new_thread(self.send_messages, (call_node, ))
         # Get messages for sender
         return self.get_messages(request)
@@ -134,17 +144,44 @@ class server(SimpleHTTPSServer.handler):
             ip=request["socket"])
         # Add message to be sent out
         recv_data = self.form_data(request['data'])
-        # print "SERVER RECEVED CALL RETURN"
+        self.log("SERVER RECEVED CALL RETURN")
         # Send that call out to the node
         recv_message = self.message(request["variables"]["name"], \
-            recv_data["call_return"], recv_data["to"], name="call_return")
+            recv_data["call/return"], recv_data["to"], name="call/return")
         # If the service is being sent its own request then
         if request["variables"]["name"] in recv_message["seen"] \
             and request["variables"]["name"] == recv_message["to"]:
             recv_message["seen"].remove(request["variables"]["name"])
         if "return_key" in recv_data:
             recv_message["return_key"] = recv_data["return_key"]
-        # print recv_message["call_return"]
+        # print recv_message["call/return"]
+        # print recv_message
+        self.add_message(recv_message)
+        # print hex(id(self.data))
+        self.log("MESSAGES" + recv_data["to"])
+        self.log(json.dumps(self.data[recv_data["to"]], indent=4, sort_keys=True))
+        # print json.dumps(self.messages(recv_data["to"]), indent=4, sort_keys=True)
+        thread.start_new_thread(self.send_messages, (recv_data["to"], ))
+        # Get messages for sender
+        return self.get_messages(request)
+
+    def post_call_failed(self, request):
+        # Update the status of the node
+        self.node_status(request["variables"]["name"], update=True, \
+            ip=request["socket"])
+        # Add message to be sent out
+        recv_data = self.form_data(request['data'])
+        # print "SERVER RECEVED CALL RETURN"
+        # Send that call out to the node
+        recv_message = self.message(request["variables"]["name"], \
+            recv_data["call/failed"], recv_data["to"], name="call/failed")
+        # If the service is being sent its own request then
+        if request["variables"]["name"] in recv_message["seen"] \
+            and request["variables"]["name"] == recv_message["to"]:
+            recv_message["seen"].remove(request["variables"]["name"])
+        if "return_key" in recv_data:
+            recv_message["return_key"] = recv_data["return_key"]
+        # print recv_message["call/failed"]
         # print recv_message
         self.add_message(recv_message)
         # print hex(id(self.data))
@@ -370,6 +407,7 @@ class call_result(object):
     def __init__(self, initval=None):
         self.initval = initval
         self.value = initval
+        self.call_failed = False
 
     def __call__(self, *args, **kwargs):
         return self.result(*args, **kwargs)
@@ -378,8 +416,15 @@ class call_result(object):
         if value is not None:
             self.value = value
         while self.value is self.initval:
-            pass
+            self.failed()
         return self.value
+
+    def failed(self, value=None):
+        if value is not None:
+            self.call_failed = value
+        elif self.call_failed is not False:
+            raise errors.ServiceCallFailed(self.call_failed)
+        return self.call_failed
 
 class client(server):
     """docstring for client"""
@@ -445,15 +490,22 @@ class client(server):
             if as_json:
                 data["data"] = as_json
             thread.start_new_thread(self.recv, (data, ))
-        elif "call_return" in data:
-            as_json = self.json(data["call_return"])
+        elif "call/return" in data or "call/failed" in data:
+            if "call/return" in data:
+                message_type = "call/return"
+            elif "call/failed" in data:
+                message_type = "call/failed"
+            as_json = self.json(data[message_type])
             if as_json:
-                data["call_return"] = as_json
-            if data["call_return"] == "false":
-                data["call_return"] = False
+                data[message_type] = as_json
+            if data[message_type] == "false":
+                data[message_type] = False
             # Call and send back result
             if "return_key" in data and data["return_key"] in self.results:
-                self.results[data["return_key"]](data["call_return"])
+                if "call/return" == message_type:
+                    self.results[data["return_key"]](data[message_type])
+                elif "call/failed" == message_type:
+                    self.results[data["return_key"]].failed(data[message_type])
                 del self.results[data["return_key"]]
 
     def json(self, res):
@@ -676,19 +728,22 @@ class service(client):
         # print "CALLING METHOD"
         # print send_to, call_data
         res = False
-        # Get the function
-        found_method = getattr(self, call_data["name"])
-        # Call the function
-        res = found_method(*call_data["args"], **call_data["kwargs"])
-        return self.call_return(res, send_to, return_key)
+        try:
+            # Get the function
+            found_method = getattr(self, call_data["name"])
+            # Call the function
+            res = found_method(*call_data["args"], **call_data["kwargs"])
+            return self.call_return(res, send_to, return_key)
+        except Exception as error:
+            return self.call_failed(str(error), send_to, return_key)
 
     def call_return(self, data, to, return_key):
         """
         Returns the result of a call back to caller
         """
-        url = "call_return/" + self.name
-        # print "CLIENT SENDING CALL RETURN"
-        # print self.name, to, data
+        url = "call/return/" + self.name
+        # self.log("CLIENT SENDING CALL RETURN")
+        # self.log(data)
         try:
             data = json.dumps(data)
         except:
@@ -696,7 +751,26 @@ class service(client):
         res = {
             "to": to,
             "return_key": return_key,
-            "call_return": data
+            "call/return": data
+        }
+        res = self.post(url, res)
+        return self.return_status(res)
+
+    def call_failed(self, data, to, return_key):
+        """
+        Returns the result of a call back to caller
+        """
+        url = "call/failed/" + self.name
+        # self.log("CLIENT SENDING CALL FAILED")
+        # self.log(data)
+        try:
+            data = json.dumps(data)
+        except:
+            pass
+        res = {
+            "to": to,
+            "return_key": return_key,
+            "call/failed": data
         }
         res = self.post(url, res)
         return self.return_status(res)
