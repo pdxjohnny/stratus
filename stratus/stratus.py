@@ -36,6 +36,7 @@ PORT = 5678
 TIME_OUT = 20
 BIND_TIME = 0.1
 ALL_CLIENTS = "__all__"
+DOUBLE_LINE_BREAK = "\r\n\r\n"
 CONNECTION_REFUSED = "Connection Refused"
 
 class server(SimpleHTTPSServer.handler):
@@ -418,7 +419,12 @@ class call_result(object):
         if value is not None:
             self.call_failed = value
         elif self.call_failed is not False:
-            raise errors.ServiceCallFailed(self.call_failed)
+            error_string = self.call_failed
+            error_trace = False
+            if DOUBLE_LINE_BREAK in error_string:
+                error_trace = error_string.split(DOUBLE_LINE_BREAK)[1]
+                error_string = error_string.split(DOUBLE_LINE_BREAK)[0]
+            raise errors.ServiceCallFailed(error_string, error_trace)
         return self.call_failed
 
 class client(server):
@@ -750,7 +756,10 @@ class service(client):
             res = found_method(*call_data["args"], **call_data["kwargs"])
             return self.call_return(res, send_to, return_key)
         except Exception as error:
-            return self.call_failed(str(error), send_to, return_key)
+            print str(error)
+            stack_track = str(error) + DOUBLE_LINE_BREAK + traceback.format_exc()
+            return self.call_failed(stack_track, send_to, return_key)
+            # return self.call_failed(str(error), send_to, return_key)
 
     def call_return(self, data, to, return_key):
         """

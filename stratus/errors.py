@@ -5,7 +5,11 @@ class BaseException(Exception):
         self.fail_trace = fail_trace
 
     def __str__(self):
-        return self.reason
+        reason = self.reason
+        if self.fail_trace:
+            reason = "Remote Trace\r\n\r\n{}stratus.errors.{}: {}".format(self.fail_trace, \
+                self.__class__.__name__, self.reason)
+        return reason
 
 class ServiceCallFailed(BaseException):
     pass
