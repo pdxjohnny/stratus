@@ -24,7 +24,7 @@ import SimpleHTTPSServer
 import errors
 import sockhttp
 
-__version__ = "0.0.38"
+__version__ = "0.1.0"
 __description__ = "Connection facilitator"
 __logo__ = """
  ___  ____  ____    __   ____  __  __  ___
