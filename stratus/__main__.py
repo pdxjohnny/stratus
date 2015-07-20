@@ -10,9 +10,14 @@ Facilitates connections
 import sys
 import time
 import json
-import stratus
 import argparse
 import subprocess
+
+import stratus
+import service
+import client
+import server
+import constants
 
 ARG_PARSER = False
 PROMPT = ":\r"
@@ -71,7 +76,7 @@ def master(args):
 def start(args):
     global __server_process__
     del args["recv"]
-    __server_process__ = stratus.server()
+    __server_process__ = server.server()
     if "username" in args and "password" in args:
         global AUTH_USER
         global AUTH_PASS
@@ -90,7 +95,7 @@ def connect(args):
     global __client_conn__
     recv_function = args["recv"]
     del args["recv"]
-    __client_conn__ = stratus.client()
+    __client_conn__ = client.client()
     __client_conn__.connect(**args)
     __client_conn__.recv = getattr(sys.modules[__name__], recv_function)
     while True:
@@ -108,7 +113,7 @@ def connect(args):
 
 def arg_setup():
     global ARG_PARSER
-    ARG_PARSER = argparse.ArgumentParser(description=stratus.__description__)
+    ARG_PARSER = argparse.ArgumentParser(description=constants.__description__)
     ARG_PARSER.add_argument("action", type=unicode, \
         help="Start server or connect to server (start, connect, master)")
     ARG_PARSER.add_argument("--host", "-a", type=unicode, \
@@ -131,7 +136,7 @@ def arg_setup():
         default="print_recv", \
         help="Function to exicute on recive data (print_recv, shell)")
     ARG_PARSER.add_argument("--version", "-v", action="version", \
-        version=u"stratus " + unicode(stratus.__version__) )
+        version=u"stratus " + unicode(constants.__version__) )
     initial = vars(ARG_PARSER.parse_args())
     args = {}
     for arg in initial:
@@ -140,7 +145,7 @@ def arg_setup():
     return args
 
 def main():
-    print (stratus.__logo__)
+    print (constants.__logo__)
     args = arg_setup()
     # Get the action
     action = getattr(sys.modules[__name__], args["action"])
