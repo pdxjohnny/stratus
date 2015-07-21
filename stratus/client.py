@@ -198,7 +198,7 @@ class client(server.server):
             connection.request("POST", "/" + url, data, headers)
             res = connection.getresponse()
             res = res.read()
-        except (httplib.BadStatusLine, httplib.CannotSendRequest), error:
+        except (httplib.BadStatusLine, httplib.CannotSendRequest) as error:
             if reconnect:
                 self.log("Reconecting")
                 self.http_conncet(recv_listen=False)

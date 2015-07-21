@@ -15,7 +15,7 @@ class service(stratus.stratus):
         return self.name
 
     def say_hello(self, name):
-        return "Hello " + str(name)
+        return u"Hello " + unicode(name)
 
 def main():
     for i in xrange(0 ,NUM_SERVICES):
