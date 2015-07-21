@@ -29,18 +29,68 @@ import SimpleHTTPSServer
 
 import constants
 import errors
-import sockhttp
 
-class server(SimpleHTTPSServer.handler):
+from tornado import websocket, web, ioloop
+import uuid
+import json
+
+websocket_clients = {}
+stratus_clients = {}
+
+def stratus_recv(data):
+    websocket_clients[data["__name__"]].write_message(data)
+
+class IndexHandler(web.RequestHandler):
+    def get(self):
+        self.render("index.html")
+
+class SocketHandler(websocket.WebSocketHandler):
+    def check_origin(self, origin):
+        return True
+
+    def on_message(self, message):
+        stratus_clients[self.client_name].send(message)
+
+    def open(self):
+        self.client_name = str(uuid.uuid4())
+        self.application.node_status(self.client_name, \
+            conn=self, ip=self.request.remote_ip)
+        print self.request
+
+    def on_close(self):
+        if self.client_name in websocket_clients:
+            del websocket_clients[self.client_name]
+        if self.client_name in stratus_clients:
+            stratus_clients[self.client_name].disconnect()
+            del stratus_clients[self.client_name]
+
+class ApiHandler(web.RequestHandler):
+
+    @web.asynchronous
+    def get(self, *args):
+        self.finish()
+        id = self.get_argument("id")
+        value = self.get_argument("value")
+        data = {"id": id, "value" : value}
+        data = json.dumps(data)
+        for client_name in stratus_clients:
+            stratus_clients[client_name].recv(data)
+
+    @web.asynchronous
+    def post(self):
+        pass
+
+class server(web.Application):
     """docstring for handler"""
-    def __init__(self):
-        super(server, self).__init__()
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
         self.node_timeout(1, constants.TIME_OUT)
         # Server process
         self.process = False
         self.conns = {}
         # Clients that have datetime objects in them
-        self.clientsd = {}
+        self.clients = {}
         # Clients that don't have datetime objects in them
         self.clients = {}
         # For sending messages
@@ -51,36 +101,12 @@ class server(SimpleHTTPSServer.handler):
         self.client_change = False
         # Loops through the array of callable nodes
         self.rotate_call = 0
-        self.actions = [
-            ('post', '/info/:name', self.post_info, self.authenticate),
-            ('post', '/ping/:name', self.post_ping, self.authenticate),
-            ('post', '/call/return/:name', self.post_call_return, self.authenticate),
-            ('post', '/call/failed/:name', self.post_call_failed, self.authenticate),
-            ('post', '/call/:name', self.post_call, self.authenticate),
-            ('get', '/ping/:name', self.get_ping, self.authenticate),
-            ('get', '/connect/:name', self.get_connect, self.authenticate),
-            ('get', '/disconnect/:name', self.get_disconnect, self.authenticate),
-            ('get', '/messages/:name', self.get_messages, self.authenticate),
-            ('get', '/connected', self.get_connected, self.authenticate),
-            ('get', '/:page', self.get_connected, self.authenticate)
-            ]
 
     def log(self, message):
         del message
 
     def date_handler(self, obj):
         return obj.isoformat() if hasattr(obj, 'isoformat') else obj
-
-    def authenticate(self, request ):
-        if not self.auth:
-            return True
-        authorized, response = self.basic_auth(request)
-        if not authorized:
-            return response
-        username, password = response
-        if self.auth(username, password):
-            return True
-        return SimpleHTTPSServer.SEND_BASIC_AUTH
 
     def post_ping(self, request):
         # Update the status of the node
@@ -210,20 +236,27 @@ class server(SimpleHTTPSServer.handler):
         return self.end_response(headers, output)
 
     def get_connected(self, request):
-        output = json.dumps(self.clientsd, default=self.date_handler)
+        output = json.dumps(self.clients, default=self.date_handler)
         headers = self.create_header()
         headers["Content-Type"] = "application/json"
         return self.end_response(headers, output)
 
     def start(self, host="0.0.0.0", port=constants.PORT, key=False, crt=False, threading=True, **kwargs):
-        thread.start_new_thread(self.update_status, ())
-        return super(server, self).start(host, port, key, crt, threading, **kwargs)
+        websocket_handler = [
+            (r'/stratus_ws', SocketHandler),
+        ]
+        super(server, self).__init__(websocket_handler)
+        self.listen(port)
+        if threading:
+            thread.start_new_thread(ioloop.IOLoop.instance().start, ())
+        else:
+            ioloop.IOLoop.instance().start()
 
     def call_node(self, service_type=True):
         res = False
-        services = [name for name in self.clientsd \
-            if "service" in self.clientsd[name] \
-            and self.clientsd[name]["service"] == service_type]
+        services = [name for name in self.clients \
+            if "service" in self.clients[name] \
+            and self.clients[name]["service"] == service_type]
         self.log("DETRIMINING NODE TO CALL")
         self.log(service_type)
         self.log(self.rotate_call)
@@ -240,7 +273,7 @@ class server(SimpleHTTPSServer.handler):
     def update_status(self):
         while True:
             try:
-                for node in self.clientsd:
+                for node in self.clients:
                     self.node_status(node)
                 time.sleep(self.timeout_seconds)
             except RuntimeError, error:
@@ -249,52 +282,38 @@ class server(SimpleHTTPSServer.handler):
 
     def node_status(self, node_name, update=False, conn=False, \
         info=False, ip=False, disconnect=False):
-        curr_time = datetime.datetime.now()
         # Create node
-        if not node_name in self.clientsd and not disconnect:
-            self.clientsd[node_name] = self.node(node_name, curr_time)
+        if not node_name in self.clients and not disconnect:
+            self.clients[node_name] = self.node(node_name)
             if self.onconnect:
-                self.onconnect(self.clientsd[node_name])
-        # Update time
-        elif update:
-            self.clientsd[node_name]["last_update"] = curr_time
-            self.clientsd[node_name]["online"] = True
+                self.onconnect(self.clients[node_name])
         # Info
         if info:
             info = self.json(info)
             if info:
-                self.clientsd[node_name].update(info)
+                self.clients[node_name].update(info)
         # Get client ip address
         if ip:
-            self.clientsd[node_name]["ip"] = ip.getpeername()[0]
+            self.clients[node_name]["ip"] = ip
         # Offline
         else:
-            if disconnect or curr_time - self.timeout > \
-                self.clientsd[node_name]["last_update"]:
-                self.clientsd[node_name]["online"] = False
+            if disconnect:
+                self.clients[node_name]["online"] = False
                 if self.ondisconnect:
-                    self.ondisconnect(self.clientsd[node_name])
-                del self.clientsd[node_name]
+                    self.ondisconnect(self.clients[node_name])
+                del self.clients[node_name]
                 if node_name in self.conns:
                     del self.conns[node_name]
         # Connect recv socket
         if conn:
             self.conns[node_name] = conn
-        # Stringify the datetimes
-        self.clients = json.loads(json.dumps(self.clientsd, \
-            default=self.date_handler))
         # If there is a function that needs to be called when a client changes
         if self.client_change:
             self.client_change(self.clients)
 
-    def node(self, name, curr_time=False):
-        # Don't have to call datetime.datetime.now() is provided
-        if not curr_time:
-            curr_time = datetime.datetime.now()
+    def node(self, name):
         return {
-            "name": name,
-            "last_update": curr_time,
-            "online": True
+            "name": name
         }
 
     def message(self, sent_by, data):
@@ -330,12 +349,12 @@ class server(SimpleHTTPSServer.handler):
         return False
 
     def send_messages(self, to):
-        clientsd = []
+        clients = []
         if to == constants.ALL_CLIENTS:
-            clientsd = list(self.conns.keys())
+            clients = list(self.conns.keys())
         else:
-            clientsd = [to]
-        for client_name in clientsd:
+            clients = [to]
+        for client_name in clients:
             thread.start_new_thread(self.send_message, (client_name, ))
 
     def send_message(self, to):
@@ -369,7 +388,7 @@ class server(SimpleHTTPSServer.handler):
                     try:
                         # If all clients have seen or the one its to has seen
                         if len(self.data[name]) and \
-                            (len(self.data[name][item]["seen"]) >= len(self.clientsd) or \
+                            (len(self.data[name][item]["seen"]) >= len(self.clients) or \
                                 self.data[name][item]["to"] in self.data[name][item]["seen"]):
                             del self.data[name][item]
                     except IndexError as error:
@@ -395,3 +414,12 @@ class server(SimpleHTTPSServer.handler):
             return res
         except (ValueError, KeyError):
             return False
+
+def main():
+    test = server()
+    test.start(port=9000, threading=False)
+    while True:
+        time.sleep(300)
+
+if __name__ == '__main__':
+    main()
