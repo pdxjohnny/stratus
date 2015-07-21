@@ -19,7 +19,6 @@ import client
 import server
 import constants
 
-ARG_PARSER = False
 PROMPT = ":\r"
 AUTH_USER = False
 AUTH_PASS = False
@@ -112,32 +111,31 @@ def connect(args):
                 __client_conn__.send(data)
 
 def arg_setup():
-    global ARG_PARSER
-    ARG_PARSER = argparse.ArgumentParser(description=constants.__description__)
-    ARG_PARSER.add_argument("action", type=unicode, \
+    arg_parser = argparse.ArgumentParser(description=constants.__description__)
+    arg_parser.add_argument("action", type=unicode, \
         help="Start server or connect to server (start, connect, master)")
-    ARG_PARSER.add_argument("--host", "-a", type=unicode, \
+    arg_parser.add_argument("--host", "-a", type=unicode, \
         help="Address of host server")
-    ARG_PARSER.add_argument("--port", type=int, \
+    arg_parser.add_argument("--port", type=int, \
         help="Port to host or connect to stratus server")
-    ARG_PARSER.add_argument("--key", type=unicode, \
+    arg_parser.add_argument("--key", type=unicode, \
         help="Key file to use")
-    ARG_PARSER.add_argument("--crt", type=unicode, \
+    arg_parser.add_argument("--crt", type=unicode, \
         help="Cert file to use")
-    ARG_PARSER.add_argument("--name", "-n", type=unicode, \
+    arg_parser.add_argument("--name", "-n", type=unicode, \
         help="Name to identify client by other than hostname")
-    ARG_PARSER.add_argument("--username", "-u", type=unicode, \
+    arg_parser.add_argument("--username", "-u", type=unicode, \
         help="Username to connect to stratus server")
-    ARG_PARSER.add_argument("--password", "-p", type=unicode, \
+    arg_parser.add_argument("--password", "-p", type=unicode, \
         help="Password to connect to stratus server")
-    ARG_PARSER.add_argument("--ssl", action='store_true', default=False, \
+    arg_parser.add_argument("--ssl", action='store_true', default=False, \
         help="Connect to the server with ssl")
-    ARG_PARSER.add_argument("--recv", "-r", type=unicode, \
+    arg_parser.add_argument("--recv", "-r", type=unicode, \
         default="print_recv", \
         help="Function to exicute on recive data (print_recv, shell)")
-    ARG_PARSER.add_argument("--version", "-v", action="version", \
+    arg_parser.add_argument("--version", "-v", action="version", \
         version=u"stratus " + unicode(constants.__version__) )
-    initial = vars(ARG_PARSER.parse_args())
+    initial = vars(arg_parser.parse_args())
     args = {}
     for arg in initial:
         if initial[arg]:

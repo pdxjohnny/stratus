@@ -51,9 +51,9 @@ class call_result(object):
         elif self.call_failed is not False:
             error_string = self.call_failed
             error_trace = False
-            if DOUBLE_LINE_BREAK in error_string:
-                error_trace = error_string.split(DOUBLE_LINE_BREAK)[1]
-                error_string = error_string.split(DOUBLE_LINE_BREAK)[0]
+            if constants.DOUBLE_LINE_BREAK in error_string:
+                error_trace = error_string.split(constants.DOUBLE_LINE_BREAK)[1]
+                error_string = error_string.split(constants.DOUBLE_LINE_BREAK)[0]
             raise errors.ServiceCallFailed(error_string, error_trace)
         return self.call_failed
 

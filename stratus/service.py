@@ -58,7 +58,7 @@ class service(client.client):
             res = found_method(*call_data["args"], **call_data["kwargs"])
             return self.call_return(res, send_to, return_key)
         except Exception as error:
-            stack_track = str(error) + DOUBLE_LINE_BREAK + traceback.format_exc()
+            stack_track = str(error) + constants.DOUBLE_LINE_BREAK + traceback.format_exc()
             return self.call_failed(stack_track, send_to, return_key)
 
     def call_return(self, data, to, return_key):
