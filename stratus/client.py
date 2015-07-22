@@ -110,9 +110,7 @@ class client(server.server):
             res = json.loads(res)
             if len(res) > 0:
                 for item in xrange(0, len(res)):
-                    data = res[item]
-                    data["__name__"] = self.name
-                    self.call_recv(data)
+                    self.call_recv(res[item])
             return True
         except (ValueError, KeyError):
             return False

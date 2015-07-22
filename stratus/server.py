@@ -1,9 +1,3 @@
-# recv_data = False
-# # Get the info
-# try:
-#     recv_data = self.form_data(request['data'])
-# except KeyError as e:
-#     pass
 #! /usr/bin/python
 import os
 import re
@@ -29,68 +23,79 @@ import SimpleHTTPSServer
 
 import constants
 import errors
+import helper
 
 from tornado import websocket, web, ioloop
 import uuid
 import json
 
-websocket_clients = {}
-stratus_clients = {}
-
-def stratus_recv(data):
-    websocket_clients[data["__name__"]].write_message(data)
-
-class IndexHandler(web.RequestHandler):
+class Connected(web.RequestHandler):
+    @web.asynchronous
     def get(self):
-        self.end("{}")
+        """
+        Sends the clients connected
+        """
+        clients = json.dumps(self.application.clients)
+        self.finish(clients)
 
-class SocketHandler(websocket.WebSocketHandler):
+class Connect(websocket.WebSocketHandler):
     def check_origin(self, origin):
         return True
 
     def on_message(self, message):
-        message = json.loads(message)
-        recv_message = self.application.message(self.client_name, message)
-        self.application.add_message(recv_message)
-        thread.start_new_thread(self.application.send_messages, \
-            (recv_message["to"], ))
+        """
+        Calls a method in the server based on the string in method["action"]
+        If the method is not found it calls server.send passing the message
+        """
+        # Load to dict if message is json string
+        if not isinstance(message, dict):
+            message = json.loads(message)
+        # Create a message from self.client_name
+        message = self.application.message(self.client_name, message)
+        # Get the action to be preformed
+        action = message.get("action", False)
+        # If there is not a method for the action then just send it
+        server_method = self.application.send
+        # If there is an action to be done
+        if action:
+            # Try to call the server method named meassge["action"]
+            try:
+                # Get the server method from the server
+                server_method = getattr(self.application, action)
+            except Exception as error:
+                pass
+        # Call the server method
+        server_method(message)
 
     def open(self):
+        """
+        Call the open server method
+        """
         self.client_name = str(uuid.uuid4())
-        self.application.node_status(self.client_name, \
-            conn=self, ip=self.request.remote_ip)
+        message = {
+            "action": "open",
+            "websocket": self
+        }
+        self.on_message(message)
 
     def on_close(self):
-        self.application.node_status(self.client_name, disconnect=True)
-
-class ApiHandler(web.RequestHandler):
-
-    @web.asynchronous
-    def get(self, *args):
-        self.finish()
-        id = self.get_argument("id")
-        value = self.get_argument("value")
-        data = {"id": id, "value" : value}
-        data = json.dumps(data)
-        for client_name in stratus_clients:
-            stratus_clients[client_name].recv(data)
-
-    @web.asynchronous
-    def post(self):
-        pass
+        """
+        Call the disconnect server method
+        """
+        message = {
+            "action": "disconnect"
+        }
+        self.on_message(message)
 
 class server(web.Application):
     """docstring for handler"""
     def __init__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
-        self.node_timeout(1, constants.TIME_OUT)
         # Server process
         self.process = False
         self.conns = {}
         # Clients that have datetime objects in them
-        self.clients = {}
-        # Clients that don't have datetime objects in them
         self.clients = {}
         # For sending messages
         self.data = {}
@@ -100,162 +105,59 @@ class server(web.Application):
         self.client_change = False
         # Loops through the array of callable nodes
         self.rotate_call = 0
-        # self.actions = [
-        #     ('post', '/info/:name', self.post_info, self.authenticate),
-        #     ('post', '/ping/:name', self.post_ping, self.authenticate),
-        #     ('post', '/call/return/:name', self.post_call_return, self.authenticate),
-        #     ('post', '/call/failed/:name', self.post_call_failed, self.authenticate),
-        #     ('post', '/call/:name', self.post_call, self.authenticate),
-        #     ('get', '/ping/:name', self.get_ping, self.authenticate),
-        #     ('get', '/connect/:name', self.get_connect, self.authenticate),
-        #     ('get', '/disconnect/:name', self.get_disconnect, self.authenticate),
-        #     ('get', '/messages/:name', self.get_messages, self.authenticate),
-        #     ('get', '/connected', self.get_connected, self.authenticate),
-        #     ('get', '/:page', self.get_connected, self.authenticate)
-        #     ]
 
     def log(self, message):
         del message
 
-    def date_handler(self, obj):
-        return obj.isoformat() if hasattr(obj, 'isoformat') else obj
+    def open(self, message):
+        self.node_status(message["from"], conn=message["websocket"], \
+            ip=message["websocket"].request.remote_ip)
+        message = {
+            "action": "name",
+            "to": message["from"]
+        }
+        message = self.message(constants.SERVER_NAME, message)
+        self.add_message(message)
+        thread.start_new_thread(self.send_messages, (message["to"], ))
 
-    def post_ping(self, request):
-        # Update the status of the node
-        self.node_status(request["variables"]["name"], update=True, \
-            ip=request["socket"])
-        # Add message to be sent out
-        recv_data = self.form_data(request['data'])
-        recv_message = self.message(request["variables"]["name"], recv_data)
-        self.add_message(recv_message)
-        thread.start_new_thread(self.send_messages, (recv_message["to"], ))
-        # Get messages for sender
-        return self.get_messages(request)
+    def send(self, message):
+        self.add_message(message)
+        thread.start_new_thread(self.send_messages, (message["to"], ))
 
-    def post_call(self, request):
-        # Update the status of the node
-        self.node_status(request["variables"]["name"], update=True, \
-            ip=request["socket"])
-        # Add message to be sent out
-        recv_data = self.form_data(request['data'])
-        service_name = recv_data.get("service", True)
+    def call(self, message):
+        service_name = message.get("service", True)
         # Distribute the load
         call_node = self.call_node(service_name)
         # If there are service nodes to call
         if call_node:
             # Send that call out to the node
-            recv_data["to"] = call_node
-            recv_message = self.message(request["variables"]["name"], recv_data)
+            message["to"] = call_node
         else:
             no_service = "No service named \"{}\"".format(service_name)
             new_message = {
-                "to": request["variables"]["name"],
-                "call/failed": no_service,
+                "to": message["from"],
+                "call_failed": no_service,
             }
-            recv_message = self.message("__stratus__", new_message)
-        # If the service is being sent its own request then
-        if request["variables"]["name"] in recv_message["seen"] \
-            and request["variables"]["name"] == recv_message["to"]:
-            recv_message["seen"].remove(request["variables"]["name"])
-        # Attach the return key to the message
-        if "return_key" in recv_data:
-            recv_message["return_key"] = recv_data["return_key"]
+            message = self.message(constants.SERVER_NAME, new_message)
         # Add the message to be set out
-        self.log("ADDING CALL MESSAGE")
-        self.log(recv_message)
-        self.add_message(recv_message)
-        # If there is a node to call send it the call request
-        if call_node:
-            thread.start_new_thread(self.send_messages, (call_node, ))
-        # Get messages for sender
-        return self.get_messages(request)
+        self.add_message(message)
+        # If there is a node to call send it the call message or send the caller
+        # a failed to call message
+        thread.start_new_thread(self.send_messages, (message["to"], ))
 
-    def post_call_return(self, request):
-        # Update the status of the node
-        self.node_status(request["variables"]["name"], update=True, \
-            ip=request["socket"])
-        # Add message to be sent out
-        recv_data = self.form_data(request['data'])
-        self.log("SERVER RECEVED CALL RETURN")
-        # Send that call out to the node
-        recv_message = self.message(request["variables"]["name"], recv_data)
-        # If the service is being sent its own request then
-        if request["variables"]["name"] in recv_message["seen"] \
-            and request["variables"]["name"] == recv_message["to"]:
-            recv_message["seen"].remove(request["variables"]["name"])
-        if "return_key" in recv_data:
-            recv_message["return_key"] = recv_data["return_key"]
-        self.add_message(recv_message)
-        self.log("MESSAGES" + recv_data["to"])
-        self.log(json.dumps(self.data[recv_data["to"]], indent=4, sort_keys=True))
-        thread.start_new_thread(self.send_messages, (recv_data["to"], ))
-        # Get messages for sender
-        return self.get_messages(request)
+    def info(self, message):
+        # Add the info to the client
+        self.node_status(message["from"], info=message["info"])
 
-    def post_call_failed(self, request):
-        # Update the status of the node
-        self.node_status(request["variables"]["name"], update=True, \
-            ip=request["socket"])
-        # Add message to be sent out
-        recv_data = self.form_data(request['data'])
-        # Send that call out to the node
-        recv_message = self.message(request["variables"]["name"], recv_data)
-        # If the service is being sent its own request then
-        if request["variables"]["name"] in recv_message["seen"] \
-            and request["variables"]["name"] == recv_message["to"]:
-            recv_message["seen"].remove(request["variables"]["name"])
-        if "return_key" in recv_data:
-            recv_message["return_key"] = recv_data["return_key"]
-        self.add_message(recv_message)
-        self.log("MESSAGES" + recv_data["to"])
-        self.log(json.dumps(self.data[recv_data["to"]], indent=4, sort_keys=True))
-        thread.start_new_thread(self.send_messages, (recv_data["to"], ))
-        # Get messages for sender
-        return self.get_messages(request)
-
-    def post_info(self, request):
-        # Get the info
-        recv_data = self.form_data(request['data'])
-        # Add the info to the node and update the status of the node
-        self.node_status(request["variables"]["name"], update=True, \
-            info=recv_data["info"], ip=request["socket"])
-        # Get messages for sender
-        return self.get_messages(request)
-
-    def get_ping(self, request):
-        self.node_status(request["variables"]["name"], update=True, \
-            ip=request["socket"])
-        # Get messages for sender
-        return self.get_messages(request)
-
-    def get_connect(self, request):
-        self.node_status(request["variables"]["name"], update=True, \
-            conn=request["socket"], ip=request["socket"])
-        # Get messages for sender
-        return self.get_messages(request)
-
-    def get_disconnect(self, request):
-        self.node_status(request["variables"]["name"], disconnect=True)
-        # Get messages for sender
-        return self.get_messages(request)
-
-    def get_messages(self, request):
-        # Get messages for sender
-        send_data = self.messages(request["variables"]["name"])
-        output = json.dumps(send_data)
-        headers = self.create_header()
-        headers["Content-Type"] = "application/json"
-        return self.end_response(headers, output)
-
-    def get_connected(self, request):
-        output = json.dumps(self.clients, default=self.date_handler)
-        headers = self.create_header()
-        headers["Content-Type"] = "application/json"
-        return self.end_response(headers, output)
+    def disconnect(self, message):
+        # Remove the client from the active connections
+        self.node_status(message["from"], disconnect=True)
 
     def start(self, host="0.0.0.0", port=constants.PORT, key=False, crt=False, threading=True, **kwargs):
         websocket_handler = [
-            (r'/connect', SocketHandler),
+            (r'/connect', Connect),
+            (r'/connected', Connected),
+            (r'/', Connected)
         ]
         super(server, self).__init__(websocket_handler)
         self.listen(port)
@@ -269,10 +171,6 @@ class server(web.Application):
         services = [name for name in self.clients \
             if "service" in self.clients[name] \
             and self.clients[name]["service"] == service_type]
-        self.log("DETRIMINING NODE TO CALL")
-        self.log(service_type)
-        self.log(self.rotate_call)
-        self.log(services)
         self.rotate_call += 1
         # Set back to zero once we have called on all nodes
         if self.rotate_call >= len(services):
@@ -282,17 +180,7 @@ class server(web.Application):
         self.log(res)
         return res
 
-    def update_status(self):
-        while True:
-            try:
-                for node in self.clients:
-                    self.node_status(node)
-                time.sleep(self.timeout_seconds)
-            except RuntimeError, error:
-                # Dictionary size change is ok
-                pass
-
-    def node_status(self, node_name, update=False, conn=False, \
+    def node_status(self, node_name, conn=False, \
         info=False, ip=False, disconnect=False):
         # Create node
         if not node_name in self.clients and not disconnect:
@@ -328,10 +216,7 @@ class server(web.Application):
             "name": name
         }
 
-    def message(self, sent_by, data):
-        # print data
-        # Copy data and add to it
-        new_message = copy.deepcopy(data)
+    def message(self, sent_by, new_message):
         # Create a list of clients that have seen the message
         new_message["seen"] = [sent_by]
         # To defaults to sending to constants.ALL_CLIENTS
@@ -355,8 +240,9 @@ class server(web.Application):
                 self.log("SENDING " + str(len(data)) + " TO " + node_name)
                 self.conns[node_name].write_message(data)
                 return True
-            except:
+            except Exception as error:
                 self.log("SENT FAILED " + node_name)
+                self.log(error)
                 del self.conns[node_name]
         return False
 
@@ -372,6 +258,8 @@ class server(web.Application):
     def send_message(self, to):
         # Get messages for to
         send_data = self.messages(to)
+        for message in send_data:
+            message["__name__"] = to
         output = json.dumps(send_data)
         success = self.send_to(to, output)
         # Client did not get message wait for reconnect or ping
@@ -404,14 +292,6 @@ class server(web.Application):
                     except IndexError as error:
                         pass
         return new_messages
-
-    def node_timeout(self, loop=False, delta=False):
-        if loop:
-            self.timeout_seconds = loop
-            self.timeout = datetime.timedelta(seconds=loop)
-        if delta:
-            self.timeout = datetime.timedelta(seconds=delta)
-        return self.timeout
 
     def json(self, res):
         """

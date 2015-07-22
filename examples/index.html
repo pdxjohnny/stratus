@@ -81,7 +81,7 @@
       <li>value 201 - 500 : change to yellow</li>
       <li>value 501 - : change to red</li>
     </ul>
-    <img src="./rest_api_example.png"/>
+    <!-- <img src="./rest_api_example.png"/> -->
   </div>
   <script>
     var ws = new WebSocket('ws://localhost:9000/connect');
@@ -90,7 +90,6 @@
     ws.onopen = function(){
       $message.attr("class", 'label label-success');
       $message.text('open');
-      ws.send('{"data": "test"}');
     };
     ws.onmessage = function(ev){
       $message.attr("class", 'label label-info');
