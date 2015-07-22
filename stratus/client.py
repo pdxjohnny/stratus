@@ -20,6 +20,9 @@ import traceback
 import mimetypes
 import multiprocessing
 import SimpleHTTPSServer
+import logging
+logger = logging.getLogger()
+logger.disabled = True
 
 import constants
 import errors
@@ -351,3 +354,16 @@ class client(server.server):
                 if connected[item]["online"]:
                     online[item] = connected[item]
         return online
+
+import websocket
+
+if __name__ == "__main__":
+    # websocket.enableTrace(True)
+    ws = websocket.create_connection("ws://localhost:9000/connect")
+    messages_sent = 0
+    while True:
+        result = ws.recv()
+        ws.send("{\"action\": \"send\", \"data\": \"Hello, World\"}")
+        messages_sent += 1
+        print messages_sent
+    ws.close()

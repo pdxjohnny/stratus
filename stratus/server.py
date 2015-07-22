@@ -103,6 +103,7 @@ class server(web.Application):
         self.onconnect = False
         self.ondisconnect = False
         self.client_change = False
+        self.messages_sent = 0
         # Loops through the array of callable nodes
         self.rotate_call = 0
 
@@ -121,10 +122,13 @@ class server(web.Application):
         thread.start_new_thread(self.send_messages, (message["to"], ))
 
     def send(self, message):
+        self.messages_sent += 1
+        print self.messages_sent
         self.add_message(message)
         thread.start_new_thread(self.send_messages, (message["to"], ))
 
     def call(self, message):
+        # The name of the service to call
         service_name = message.get("service", True)
         # Distribute the load
         call_node = self.call_node(service_name)
@@ -136,7 +140,7 @@ class server(web.Application):
             no_service = "No service named \"{}\"".format(service_name)
             new_message = {
                 "to": message["from"],
-                "call_failed": no_service,
+                "call_failed": no_service
             }
             message = self.message(constants.SERVER_NAME, new_message)
         # Add the message to be set out
@@ -197,13 +201,15 @@ class server(web.Application):
             self.clients[node_name]["ip"] = ip
         # Offline
         else:
-            if disconnect:
-                self.clients[node_name]["online"] = False
-                if self.ondisconnect:
-                    self.ondisconnect(self.clients[node_name])
-                del self.clients[node_name]
-                if node_name in self.conns:
-                    del self.conns[node_name]
+            if disconnect and node_name in self.conns:
+                try:
+                    del self.clients[node_name]
+                    if self.ondisconnect:
+                        self.ondisconnect(self.clients[node_name])
+                    if node_name in self.conns:
+                        del self.conns[node_name]
+                except Exception as error:
+                    pass
         # Connect recv socket
         if conn:
             self.conns[node_name] = conn
@@ -243,7 +249,7 @@ class server(web.Application):
             except Exception as error:
                 self.log("SENT FAILED " + node_name)
                 self.log(error)
-                del self.conns[node_name]
+                self.node_status(node_name, disconnect=True)
         return False
 
     def send_messages(self, to):

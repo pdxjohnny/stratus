@@ -90,6 +90,7 @@
     ws.onopen = function(){
       $message.attr("class", 'label label-success');
       $message.text('open');
+      window.messages_sent = 0;
     };
     ws.onmessage = function(ev){
       $message.attr("class", 'label label-info');
@@ -98,7 +99,8 @@
       $message.text('recieved message');
 
       var json = JSON.parse(ev.data);
-      console.log(json);
+      messages_sent += json.length;
+      console.log(messages_sent);
       $('#' + json.id).hide();
       $('#' + json.id).fadeIn("slow");
       $('#' + json.id).text(json.value);
