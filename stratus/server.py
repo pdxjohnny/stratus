@@ -42,27 +42,26 @@ def stratus_recv(data):
 
 class IndexHandler(web.RequestHandler):
     def get(self):
-        self.render("index.html")
+        self.end("{}")
 
 class SocketHandler(websocket.WebSocketHandler):
     def check_origin(self, origin):
         return True
 
     def on_message(self, message):
-        stratus_clients[self.client_name].send(message)
+        message = json.loads(message)
+        recv_message = self.application.message(self.client_name, message)
+        self.application.add_message(recv_message)
+        thread.start_new_thread(self.application.send_messages, \
+            (recv_message["to"], ))
 
     def open(self):
         self.client_name = str(uuid.uuid4())
         self.application.node_status(self.client_name, \
             conn=self, ip=self.request.remote_ip)
-        print self.request
 
     def on_close(self):
-        if self.client_name in websocket_clients:
-            del websocket_clients[self.client_name]
-        if self.client_name in stratus_clients:
-            stratus_clients[self.client_name].disconnect()
-            del stratus_clients[self.client_name]
+        self.application.node_status(self.client_name, disconnect=True)
 
 class ApiHandler(web.RequestHandler):
 
@@ -101,6 +100,19 @@ class server(web.Application):
         self.client_change = False
         # Loops through the array of callable nodes
         self.rotate_call = 0
+        # self.actions = [
+        #     ('post', '/info/:name', self.post_info, self.authenticate),
+        #     ('post', '/ping/:name', self.post_ping, self.authenticate),
+        #     ('post', '/call/return/:name', self.post_call_return, self.authenticate),
+        #     ('post', '/call/failed/:name', self.post_call_failed, self.authenticate),
+        #     ('post', '/call/:name', self.post_call, self.authenticate),
+        #     ('get', '/ping/:name', self.get_ping, self.authenticate),
+        #     ('get', '/connect/:name', self.get_connect, self.authenticate),
+        #     ('get', '/disconnect/:name', self.get_disconnect, self.authenticate),
+        #     ('get', '/messages/:name', self.get_messages, self.authenticate),
+        #     ('get', '/connected', self.get_connected, self.authenticate),
+        #     ('get', '/:page', self.get_connected, self.authenticate)
+        #     ]
 
     def log(self, message):
         del message
@@ -243,7 +255,7 @@ class server(web.Application):
 
     def start(self, host="0.0.0.0", port=constants.PORT, key=False, crt=False, threading=True, **kwargs):
         websocket_handler = [
-            (r'/stratus_ws', SocketHandler),
+            (r'/connect', SocketHandler),
         ]
         super(server, self).__init__(websocket_handler)
         self.listen(port)
@@ -341,7 +353,7 @@ class server(web.Application):
         if node_name in self.conns:
             try:
                 self.log("SENDING " + str(len(data)) + " TO " + node_name)
-                self.conns[node_name].sendall(data)
+                self.conns[node_name].write_message(data)
                 return True
             except:
                 self.log("SENT FAILED " + node_name)
@@ -361,9 +373,7 @@ class server(web.Application):
         # Get messages for to
         send_data = self.messages(to)
         output = json.dumps(send_data)
-        headers = self.create_header()
-        headers["Content-Type"] = "application/json"
-        success = self.send_to(to, self.end_response(headers, output) )
+        success = self.send_to(to, output)
         # Client did not get message wait for reconnect or ping
         if not success:
             for message in send_data:
@@ -417,7 +427,7 @@ class server(web.Application):
 
 def main():
     test = server()
-    test.start(port=9000, threading=False)
+    test.start(port=9000, threading=True)
     while True:
         time.sleep(300)
 
