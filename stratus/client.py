@@ -124,8 +124,8 @@ class client(server.server):
                 method = getattr(self, "recv_{}".format(data["action"]))
                 method(data)
             except Exception as error:
-                self.log("ERROR in call_recv")
-                self.log(error)
+                self.log("ERROR in recv_{}".format(data["action"]))
+                self.log(traceback.format_exc())
 
     def recv_name(self, data):
         if "__name__" in data:
@@ -142,23 +142,23 @@ class client(server.server):
     def recv_call_return(self, data):
         as_json = self.json(data["data"])
         if as_json:
-            data[message_type] = as_json
-        if data[message_type] == "false":
-            data[message_type] = False
+            data["data"] = as_json
+        if data["data"] == "false":
+            data["data"] = False
         # Call and send back result
         if "return_key" in data and data["return_key"] in self.results:
-            self.results[data["return_key"]].result(data[message_type])
+            self.results[data["return_key"]].result(data["data"])
             del self.results[data["return_key"]]
 
     def recv_call_failed(self, data):
         as_json = self.json(data["data"])
         if as_json:
-            data[message_type] = as_json
-        if data[message_type] == "false":
-            data[message_type] = False
+            data["data"] = as_json
+        if data["data"] == "false":
+            data["data"] = False
         # Call and send back result
         if "return_key" in data and data["return_key"] in self.results:
-            self.results[data["return_key"]].failed(data[message_type])
+            self.results[data["return_key"]].failed(data["data"])
             del self.results[data["return_key"]]
 
     def json(self, res):
@@ -170,7 +170,7 @@ class client(server.server):
         try:
             res = json.loads(res)
             return res
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, TypeError):
             return False
 
     def _connection_failed(self, error):
@@ -281,7 +281,7 @@ class client(server.server):
         """
         Calls a method on a node
         """
-        self.post({
+        data = {
             "action": "call",
             "call": {
                 "name": method,
@@ -291,7 +291,8 @@ class client(server.server):
             "service": service,
             # So we know where to return to
             "return_key": str(uuid.uuid4()),
-        })
+        }
+        self.post(data)
         result_aysc = call_result()
         self.results[data["return_key"]] = result_aysc
         return result_aysc
@@ -331,7 +332,7 @@ class client(server.server):
 def main():
     test = client()
     test.connect(host="localhost", port=1234)
-    raw_input()
+    print test(True, "my_name")()
 
 if __name__ == '__main__':
     main()

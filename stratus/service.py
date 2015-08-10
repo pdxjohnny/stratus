@@ -91,7 +91,7 @@ class service(client.client):
             "service": self.service_name,
         })
 
-    def my_name(self, data):
+    def my_name(self):
         return self.service_name
 
 def main():
