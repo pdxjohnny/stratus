@@ -138,8 +138,9 @@ class server(web.Application):
         else:
             no_service = "No service named \"{}\"".format(service_name)
             new_message = {
+                "action": "call_failed",
                 "to": message["from"],
-                "call_failed": no_service
+                "data": no_service,
             }
             message = self.message(constants.SERVER_NAME, new_message)
         self.send(message)
@@ -196,15 +197,15 @@ class server(web.Application):
             self.clients[node_name]["ip"] = ip
         # Offline
         else:
-            if disconnect and node_name in self.conns:
+            if disconnect and node_name in self.clients:
                 try:
-                    del self.clients[node_name]
                     if self.ondisconnect:
                         self.ondisconnect(self.clients[node_name])
+                    del self.clients[node_name]
                     if node_name in self.conns:
                         del self.conns[node_name]
                 except Exception as error:
-                    pass
+                    raise
         # Connect recv socket
         if conn:
             self.conns[node_name] = conn

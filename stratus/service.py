@@ -35,18 +35,9 @@ class service(client.client):
         super(service, self).__init__()
         self.service_name = True
 
-    def call_recv(self, data, *args, **kwargs):
-        super(service, self).call_recv(data, *args, **kwargs)
+    def recv_call(self, data):
         self.log("CALL RECV")
         self.log(data)
-        if "call" in data:
-            as_json = self.json(data["call"])
-            if as_json:
-                data["call"] = as_json
-            # Call and send back result
-            thread.start_new_thread(self.call_method, (data, ))
-
-    def call_method(self, data):
         send_to = data["from"]
         return_key = data["return_key"]
         call_data = data["call"]
@@ -65,39 +56,27 @@ class service(client.client):
         """
         Returns the result of a call back to caller
         """
-        url = "call/return/" + self.name
-        # self.log("CLIENT SENDING CALL RETURN")
-        # self.log(data)
-        try:
-            data = json.dumps(data)
-        except:
-            pass
-        res = {
+        self.log("CLIENT SENDING CALL RETURN")
+        self.log(data)
+        self.post({
+            "action": "call_return",
             "to": to,
             "return_key": return_key,
-            "call/return": data
-        }
-        res = self.post(url, res)
-        return self.return_status(res)
+            "data": data,
+        })
 
     def call_failed(self, data, to, return_key):
         """
         Returns the result of a call back to caller
         """
-        url = "call/failed/" + self.name
-        # self.log("CLIENT SENDING CALL FAILED")
-        # self.log(data)
-        try:
-            data = json.dumps(data)
-        except:
-            pass
-        res = {
+        self.log("CLIENT SENDING CALL FAILED")
+        self.log(data)
+        self.post({
+            "action": "call_failed",
             "to": to,
             "return_key": return_key,
-            "call/failed": data
-        }
-        res = self.post(url, res)
-        return self.return_status(res)
+            "data": data,
+        })
 
     def connect(self, *args, **kwargs):
         super(service, self).connect(*args, **kwargs)
@@ -108,4 +87,17 @@ class service(client.client):
     def service(self, service_name):
         self.service_name = service_name
         # Tell the server that this is a service
-        self.info({"service": self.service_name})
+        self.info({
+            "service": self.service_name,
+        })
+
+    def my_name(self, data):
+        return self.service_name
+
+def main():
+    test = service()
+    test.connect(host="localhost", port=1234)
+    raw_input()
+
+if __name__ == '__main__':
+    main()

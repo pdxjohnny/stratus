@@ -281,37 +281,32 @@ class client(server.server):
         """
         Calls a method on a node
         """
-        url = "call/" + self.name
-        call_args = {
-            "name": method,
-            "args": args,
-            "kwargs": kwargs
-        }
-        if type(call_args) != str and type(call_args) != unicode:
-            call_args = json.dumps(call_args)
-        data = {
-            "call": call_args,
+        self.post({
+            "action": "call",
+            "call": {
+                "name": method,
+                "args": args,
+                "kwargs": kwargs,
+            },
             "service": service,
             # So we know where to return to
-            "return_key": str(uuid.uuid4())
-        }
+            "return_key": str(uuid.uuid4()),
+        })
         result_aysc = call_result()
         self.results[data["return_key"]] = result_aysc
-        res = self.post(url, data)
-        self.return_status(res)
         return result_aysc
 
     def info(self, data, store=True):
         """
         Queues data for sending
         """
-        url = "info/" + self.name
         if isinstance(data, dict) or isinstance(data, list):
             if store:
                 self.store_info.update(data)
-            data = json.dumps(data)
-        res = self.post(url, {"info": data})
-        return self.return_status(res)
+        self.post({
+            "action": "info",
+            "info": data,
+        })
 
     def connected(self):
         """

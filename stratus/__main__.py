@@ -26,7 +26,7 @@ __server_process__ = False
 __client_conn__ = False
 
 def print_disconnect(client):
-    print("LOG {} disconnected".format(client["from"]))
+    print("LOG {} disconnected".format(client["name"]))
 
 def print_recv(data):
     sys.stdout.write(data["from"] + ": " + str(data["data"]) + "\r\n")
@@ -55,7 +55,7 @@ def master(args):
         del args["username"]
         del args["password"]
         __server_process__.auth = auth
-    __server_process__.disconnect = print_disconnect
+    __server_process__.ondisconnect = print_disconnect
     __server_process__.start(**args)
     __server_process__.recv = getattr(sys.modules[__name__], args["recv"])
     while True:
@@ -84,7 +84,7 @@ def start(args):
         del args["username"]
         del args["password"]
         __server_process__.auth = auth
-    __server_process__.disconnect = print_disconnect
+    __server_process__.ondisconnect = print_disconnect
     __server_process__.start(**args)
     sys.stdout.write("Server listening\r\n")
     while True:
