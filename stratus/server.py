@@ -103,7 +103,6 @@ class server(web.Application):
         self.onconnect = False
         self.ondisconnect = False
         self.client_change = False
-        self.messages_sent = 0
         # Loops through the array of callable nodes
         self.rotate_call = 0
 
@@ -121,8 +120,6 @@ class server(web.Application):
         self.send(message)
 
     def send(self, message):
-        self.messages_sent += 1
-        print "Have sent", self.messages_sent
         self.add_message(message)
         thread.start_new_thread(self.send_messages, (message["to"], ))
 
@@ -141,6 +138,7 @@ class server(web.Application):
                 "action": "call_failed",
                 "to": message["from"],
                 "data": no_service,
+                "return_key": message["return_key"],
             }
             message = self.message(constants.SERVER_NAME, new_message)
         self.send(message)

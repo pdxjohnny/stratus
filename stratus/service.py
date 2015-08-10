@@ -96,7 +96,7 @@ class service(client.client):
 
 def main():
     test = service()
-    test.connect(host="localhost", port=1234)
+    test.connect(host="localhost", port=1234, service="test")
     raw_input()
 
 if __name__ == '__main__':

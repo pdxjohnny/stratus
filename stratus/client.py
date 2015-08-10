@@ -80,9 +80,6 @@ class client(server.server):
         self.ws = False
         self.results = {}
 
-    def log(self, message):
-        print message
-
     def http_conncet(self, recv_listen=True):
         """
         Connects to the server with tcp http connections.
@@ -332,7 +329,7 @@ class client(server.server):
 def main():
     test = client()
     test.connect(host="localhost", port=1234)
-    print test(True, "my_name")()
+    print test("test", "my_name")()
 
 if __name__ == '__main__':
     main()
