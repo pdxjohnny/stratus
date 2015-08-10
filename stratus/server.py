@@ -55,7 +55,7 @@ class Connect(websocket.WebSocketHandler):
         # Get the action to be preformed
         action = message.get("action", False)
         # If there is not a method for the action then just send it
-        server_method = self.application.send
+        server_method = self.application.serv_send
         # If there is an action to be done
         if action:
             # Try to call the server method named meassge["action"]
