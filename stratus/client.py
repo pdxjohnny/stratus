@@ -247,6 +247,8 @@ class client(server.server):
             except websocket._exceptions.WebSocketConnectionClosedException \
                 as error:
                 self.disconnect()
+                if hasattr(self.connect_fail, '__call__'):
+                    self.connect_fail()
             except Exception as error:
                 self.log(error)
 
