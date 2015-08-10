@@ -71,7 +71,6 @@ class client(server.server):
         self.name = socket.gethostname()
         self.username = False
         self.password = False
-        self.running = False
         self.update = constants.TIME_OUT - 5
         self.recv = False
         self.connect_fail = False
@@ -89,9 +88,13 @@ class client(server.server):
         Connects to the server with tcp http connections.
         """
         self.log("http_conncet")
-        url = "ws://{}:{}/connect".format(self.host, self.port)
-        self.ws = websocket.create_connection(url)
-        return True
+        try:
+            url = "ws://{}:{}/connect".format(self.host, self.port)
+            self.ws = websocket.create_connection(url)
+            return True
+        except socket.error as error:
+            self.disconnect()
+        return False
 
     def httplib_conn(self):
         values = (self.host, self.port, )
@@ -144,7 +147,7 @@ class client(server.server):
             data[message_type] = False
         # Call and send back result
         if "return_key" in data and data["return_key"] in self.results:
-            self.results[data["return_key"]](data[message_type])
+            self.results[data["return_key"]].result(data[message_type])
             del self.results[data["return_key"]]
 
     def recv_call_failed(self, data):
@@ -199,11 +202,11 @@ class client(server.server):
             self._connection_failed(error)
         return res
 
-    def post(self, url, data, reconnect=True):
+    def post(self, data):
         """
         Requests the page and returns data
         """
-        if self.ws:
+        if self.ws is not False:
             self.ws.send(json.dumps(data))
 
     def connect(self, host="localhost", port=constants.PORT, ssl=False, \
@@ -240,33 +243,36 @@ class client(server.server):
         return self.return_status(res)
 
     def main(self):
-        self.running = True
-        while self.running:
+        while self.ws is not False:
             try:
                 res = self.ws.recv()
                 self.return_status(res)
+            except websocket._exceptions.WebSocketConnectionClosedException \
+                as error:
+                self.disconnect()
             except Exception as error:
                 self.log(error)
-        self.ws = False
 
     def disconnect(self):
         """
         Tells the server we are disconnecting
         """
+        self.log("disconnecting")
         try:
             self.ws.close()
         except Exception as error:
             pass
+        self.ws = False
 
     def send(self, data, to=constants.ALL_CLIENTS):
         """
-        Queues data for sending
+        Sends a message
         """
-        url = "ping/" + self.name
-        if type(data) != str and type(data) != unicode:
-            data = json.dumps(data)
-        res = self.post(url, {"to": to, "data": data})
-        return self.return_status(res)
+        self.post({
+            "action": "send",
+            "to": to,
+            "data": data,
+        })
 
     def __call__(self, *args, **kwargs):
         return self.call(*args, **kwargs)
