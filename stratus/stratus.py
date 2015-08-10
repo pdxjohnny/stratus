@@ -50,7 +50,7 @@ class stratus(service.service):
         return super(stratus, self).stop()
 
     def disconnect(self):
-        super(stratus, self).disconnect()
+        # super(stratus, self).disconnect()
         return self.stop()
 
     def ping(self, *args, **kwargs):

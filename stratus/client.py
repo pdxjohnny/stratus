@@ -90,7 +90,7 @@ class client(server.server):
             self.ws = websocket.create_connection(url)
             return True
         except socket.error as error:
-            self.disconnect()
+            self._connection_failed(error)
         return False
 
     def httplib_conn(self):

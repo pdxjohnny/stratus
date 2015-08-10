@@ -61,7 +61,7 @@ class Connect(websocket.WebSocketHandler):
             # Try to call the server method named meassge["action"]
             try:
                 # Get the server method from the server
-                server_method = getattr(self.application, action)
+                server_method = getattr(self.application, "serv_" + action)
             except Exception as error:
                 pass
         # Call the server method
@@ -103,13 +103,14 @@ class server(web.Application):
         self.onconnect = False
         self.ondisconnect = False
         self.client_change = False
+        self.ioloop = False
         # Loops through the array of callable nodes
         self.rotate_call = 0
 
     def log(self, message):
         del message
 
-    def open(self, message):
+    def serv_open(self, message):
         self.node_status(message["from"], conn=message["websocket"], \
             ip=message["websocket"].request.remote_ip)
         message = {
@@ -117,13 +118,13 @@ class server(web.Application):
             "to": message["from"]
         }
         message = self.message(constants.SERVER_NAME, message)
-        self.send(message)
+        self.serv_send(message)
 
-    def send(self, message):
+    def serv_send(self, message):
         self.add_message(message)
         thread.start_new_thread(self.send_messages, (message["to"], ))
 
-    def call(self, message):
+    def serv_call(self, message):
         # The name of the service to call
         service_name = message.get("service", True)
         # Distribute the load
@@ -141,13 +142,13 @@ class server(web.Application):
                 "return_key": message["return_key"],
             }
             message = self.message(constants.SERVER_NAME, new_message)
-        self.send(message)
+        self.serv_send(message)
 
-    def info(self, message):
+    def serv_info(self, message):
         # Add the info to the client
         self.node_status(message["from"], info=message["info"])
 
-    def disconnect(self, message):
+    def serv_disconnect(self, message):
         # Remove the client from the active connections
         self.node_status(message["from"], disconnect=True)
 
@@ -159,10 +160,15 @@ class server(web.Application):
         ]
         super(server, self).__init__(websocket_handler)
         self.listen(port)
+        self.ioloop = ioloop.IOLoop.instance()
         if threading:
-            thread.start_new_thread(ioloop.IOLoop.instance().start, ())
+            thread.start_new_thread(self.ioloop.start, ())
         else:
-            ioloop.IOLoop.instance().start()
+            self.ioloop.start()
+
+    def stop(self):
+        if self.ioloop:
+            self.ioloop.add_callback(lambda stopit: stopit.stop(), self.ioloop)
 
     def call_node(self, service_type=True):
         res = False
