@@ -26,7 +26,7 @@ __server_process__ = False
 __client_conn__ = False
 
 def print_disconnect(client):
-    print(client)
+    print("LOG {} disconnected".format(client["from"]))
 
 def print_recv(data):
     sys.stdout.write(data["from"] + ": " + str(data["data"]) + "\r\n")

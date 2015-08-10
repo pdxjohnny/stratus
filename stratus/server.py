@@ -118,12 +118,11 @@ class server(web.Application):
             "to": message["from"]
         }
         message = self.message(constants.SERVER_NAME, message)
-        self.add_message(message)
-        thread.start_new_thread(self.send_messages, (message["to"], ))
+        self.send(message)
 
     def send(self, message):
         self.messages_sent += 1
-        print self.messages_sent
+        print "Have sent", self.messages_sent
         self.add_message(message)
         thread.start_new_thread(self.send_messages, (message["to"], ))
 
@@ -143,11 +142,7 @@ class server(web.Application):
                 "call_failed": no_service
             }
             message = self.message(constants.SERVER_NAME, new_message)
-        # Add the message to be set out
-        self.add_message(message)
-        # If there is a node to call send it the call message or send the caller
-        # a failed to call message
-        thread.start_new_thread(self.send_messages, (message["to"], ))
+        self.send(message)
 
     def info(self, message):
         # Add the info to the client

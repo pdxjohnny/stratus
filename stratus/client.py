@@ -18,6 +18,7 @@ import argparse
 import datetime
 import traceback
 import mimetypes
+import websocket
 import multiprocessing
 import SimpleHTTPSServer
 import logging
@@ -70,30 +71,26 @@ class client(server.server):
         self.name = socket.gethostname()
         self.username = False
         self.password = False
+        self.running = False
         self.update = constants.TIME_OUT - 5
         self.recv = False
         self.connect_fail = False
         self.crt = False
         self.ping_conn = False
         self.send_conn = False
+        self.ws = False
         self.results = {}
+
+    def log(self, message):
+        print message
 
     def http_conncet(self, recv_listen=True):
         """
         Connects to the server with tcp http connections.
         """
         self.log("http_conncet")
-        self.headers = {"Connection": "keep-alive"}
-        if self.username and self.password:
-            encoded = base64.b64encode(self.username + ':' + self.password)
-            self.headers["Authorization"] = "Basic " + encoded
-        try:
-            self.recv_connect(recv_listen=recv_listen)
-            self.ping_conn = self.httplib_conn()
-            self.send_conn = self.httplib_conn()
-        except socket.error as error:
-            self.log("http_conncet, failed")
-            self._connection_failed(error)
+        url = "ws://{}:{}/connect".format(self.host, self.port)
+        self.ws = websocket.create_connection(url)
         return True
 
     def httplib_conn(self):
@@ -119,28 +116,47 @@ class client(server.server):
             return False
 
     def call_recv(self, data):
-        if "data" in data and hasattr(self.recv, '__call__'):
+        if "action" in data:
+            try:
+                method = getattr(self, "recv_{}".format(data["action"]))
+                method(data)
+            except Exception as error:
+                self.log("ERROR in call_recv")
+                self.log(error)
+
+    def recv_name(self, data):
+        if "__name__" in data:
+            self.name = data["__name__"]
+        self.log("Name changed to {}".format(self.name))
+
+    def recv_send(self, data):
+        if hasattr(self.recv, '__call__'):
             as_json = self.json(data["data"])
             if as_json:
                 data["data"] = as_json
             thread.start_new_thread(self.recv, (data, ))
-        elif "call/return" in data or "call/failed" in data:
-            if "call/return" in data:
-                message_type = "call/return"
-            elif "call/failed" in data:
-                message_type = "call/failed"
-            as_json = self.json(data[message_type])
-            if as_json:
-                data[message_type] = as_json
-            if data[message_type] == "false":
-                data[message_type] = False
-            # Call and send back result
-            if "return_key" in data and data["return_key"] in self.results:
-                if "call/return" == message_type:
-                    self.results[data["return_key"]](data[message_type])
-                elif "call/failed" == message_type:
-                    self.results[data["return_key"]].failed(data[message_type])
-                del self.results[data["return_key"]]
+
+    def recv_call_return(self, data):
+        as_json = self.json(data["data"])
+        if as_json:
+            data[message_type] = as_json
+        if data[message_type] == "false":
+            data[message_type] = False
+        # Call and send back result
+        if "return_key" in data and data["return_key"] in self.results:
+            self.results[data["return_key"]](data[message_type])
+            del self.results[data["return_key"]]
+
+    def recv_call_failed(self, data):
+        as_json = self.json(data["data"])
+        if as_json:
+            data[message_type] = as_json
+        if data[message_type] == "false":
+            data[message_type] = False
+        # Call and send back result
+        if "return_key" in data and data["return_key"] in self.results:
+            self.results[data["return_key"]].failed(data[message_type])
+            del self.results[data["return_key"]]
 
     def json(self, res):
         """
@@ -187,27 +203,8 @@ class client(server.server):
         """
         Requests the page and returns data
         """
-        res = ""
-        try:
-            connection = self.httplib_conn()
-            url = urllib.quote(url, safe='')
-            headers = self.headers.copy()
-            headers["Content-Type"] = "application/x-www-form-urlencoded"
-            # So we don't urlencode twice
-            if reconnect:
-                data = urllib.urlencode(data, True).replace("+", "%20")
-            connection.request("POST", "/" + url, data, headers)
-            res = connection.getresponse()
-            res = res.read()
-        except (httplib.BadStatusLine, httplib.CannotSendRequest) as error:
-            if reconnect:
-                self.log("Reconecting")
-                self.http_conncet(recv_listen=False)
-                res = self.post(url, data, reconnect=False)
-        except socket.error as error:
-            self._connection_failed(error)
-            return False
-        return res
+        if self.ws:
+            self.ws.send(json.dumps(data))
 
     def connect(self, host="localhost", port=constants.PORT, ssl=False, \
         name=socket.gethostname(), update=constants.TIME_OUT, crt=False, \
@@ -234,41 +231,6 @@ class client(server.server):
             return thread.start_new_thread(self.main, ())
         return True
 
-    def main(self):
-        """
-        Continues to ping
-        """
-        self.running = True
-        while self.running:
-            self.ping()
-            time.sleep(self.update)
-        return 0
-
-    def recv_connect(self, recv_listen=True):
-        """
-        Connects a socket that the server can push to.
-        """
-        self.recv_conn = sockhttp.conn(self.host, self.port, \
-            headers=self.headers, ssl=self.ssl, crt=self.crt)
-        url = "/connect/" + self.name
-        res = self.recv_conn.get(url)
-        res = self.return_status(res)
-        if recv_listen:
-            thread.start_new_thread(self.listen, () )
-        return res
-
-    def listen(self):
-        self.running = True
-        while self.running:
-            try:
-                res = self.recv_conn.recv()
-                if len(res):
-                    thread.start_new_thread(self.return_status, (res, ))
-            except errors.RecvDisconnected as error:
-                self.log("RecvDisconnected, Reconecting")
-                time.sleep(constants.BIND_TIME)
-                self.http_conncet(recv_listen=False)
-
     def ping(self):
         """
         Tells the server its still here and asks for instructions
@@ -277,14 +239,24 @@ class client(server.server):
         res = self.get(url, self.ping_conn)
         return self.return_status(res)
 
+    def main(self):
+        self.running = True
+        while self.running:
+            try:
+                res = self.ws.recv()
+                self.return_status(res)
+            except Exception as error:
+                self.log(error)
+        self.ws = False
+
     def disconnect(self):
         """
         Tells the server we are disconnecting
         """
-        url = "disconnect/" + self.name
-        self.running = False
-        res = self.get(url, self.send_conn)
-        return self.return_status(res)
+        try:
+            self.ws.close()
+        except Exception as error:
+            pass
 
     def send(self, data, to=constants.ALL_CLIENTS):
         """
@@ -355,15 +327,10 @@ class client(server.server):
                     online[item] = connected[item]
         return online
 
-import websocket
+def main():
+    test = client()
+    test.connect(host="localhost", port=1234)
+    raw_input()
 
-if __name__ == "__main__":
-    # websocket.enableTrace(True)
-    ws = websocket.create_connection("ws://localhost:9000/connect")
-    messages_sent = 0
-    while True:
-        result = ws.recv()
-        ws.send("{\"action\": \"send\", \"data\": \"Hello, World\"}")
-        messages_sent += 1
-        print messages_sent
-    ws.close()
+if __name__ == '__main__':
+    main()
