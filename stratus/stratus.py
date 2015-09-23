@@ -14,7 +14,6 @@ import thread
 import urllib
 import base64
 import httplib
-import argparse
 import datetime
 import traceback
 import mimetypes

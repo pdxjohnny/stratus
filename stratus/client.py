@@ -14,7 +14,6 @@ import thread
 import urllib
 import base64
 import httplib
-import argparse
 import datetime
 import traceback
 import mimetypes
@@ -227,7 +226,7 @@ class client(server.server):
         self.crt = crt
         # So that info can be sent to the server on reconnect
         self.store_info = {}
-        self.log("Connecting to {}:{}".format(self.host, self.port))
+        self.log("Connecting to {0}:{1}".format(self.host, self.port))
         self.http_conncet()
         if start_main:
             return thread.start_new_thread(self.main, ())

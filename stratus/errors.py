@@ -7,7 +7,7 @@ class BaseException(Exception):
     def __str__(self):
         reason = self.reason
         if self.fail_trace:
-            reason = "Remote Trace\r\n\r\n{}".format(self.fail_trace)
+            reason = "Remote Trace\r\n\r\n{0}".format(self.fail_trace)
         return reason
 
 class ServiceCallFailed(BaseException):

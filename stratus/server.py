@@ -20,7 +20,6 @@ import thread
 import urllib
 import base64
 import httplib
-import argparse
 import datetime
 import traceback
 import mimetypes
@@ -109,7 +108,7 @@ class server(SimpleHTTPSServer.handler):
             recv_data["to"] = call_node
             recv_message = self.message(request["variables"]["name"], recv_data)
         else:
-            no_service = "No service named \"{}\"".format(service_name)
+            no_service = "No service named \"{0}\"".format(service_name)
             new_message = {
                 "to": request["variables"]["name"],
                 "call/failed": no_service,
