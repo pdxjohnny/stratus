@@ -18,6 +18,7 @@ import urllib
 import Cookie
 import thread
 import urllib
+import random
 import base64
 import httplib
 import datetime
@@ -48,8 +49,6 @@ class server(SimpleHTTPSServer.handler):
         self.onconnect = False
         self.ondisconnect = False
         self.client_change = False
-        # Loops through the array of callable nodes
-        self.rotate_call = 0
         self.actions = [
             ('post', '/info/:name', self.post_info, self.authenticate),
             ('post', '/ping/:name', self.post_ping, self.authenticate),
@@ -65,6 +64,8 @@ class server(SimpleHTTPSServer.handler):
             ]
 
     def log(self, message):
+        if 'STRATUS_LOG' in os.environ:
+            print message
         del message
 
     def date_handler(self, obj):
@@ -225,14 +226,12 @@ class server(SimpleHTTPSServer.handler):
             and self.clientsd[name]["service"] == service_type]
         self.log("DETRIMINING NODE TO CALL")
         self.log(service_type)
-        self.log(self.rotate_call)
         self.log(services)
-        self.rotate_call += 1
-        # Set back to zero once we have called on all nodes
-        if self.rotate_call >= len(services):
-            self.rotate_call = 0
+        # Call a random service
         if len(services) > 0:
-            res = services[self.rotate_call]
+            call_random = random.randint(0, len(services) - 1)
+            self.log(call_random)
+            res = services[call_random]
         self.log(res)
         return res
 
