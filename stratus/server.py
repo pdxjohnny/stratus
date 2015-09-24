@@ -19,6 +19,7 @@ import Cookie
 import thread
 import urllib
 import random
+import select
 import base64
 import httplib
 import datetime
@@ -238,12 +239,26 @@ class server(SimpleHTTPSServer.handler):
     def update_status(self):
         while True:
             try:
+                self.remove_bad_conns()
                 for node in self.clientsd:
                     self.node_status(node)
                 time.sleep(self.timeout_seconds)
             except RuntimeError, error:
                 # Dictionary size change is ok
                 pass
+
+    def remove_bad_conns(self):
+        self.log("remove_bad_conns")
+        self.log(self.conns.values())
+        conns = self.conns.values()
+        # Loop through all of the connections
+        for sock in self.conns:
+            # If an error is raised remove the node
+            try:
+                self.conns[sock].fileno()
+            except socket.error as error:
+                self.node_status(sock, disconnect=True)
+        self.log("remove_bad_conns done")
 
     def node_status(self, node_name, update=False, conn=False, \
         info=False, ip=False, disconnect=False):
